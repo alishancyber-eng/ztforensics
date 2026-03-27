@@ -46,7 +46,7 @@ def root():
 @app.post("/access")
 def access_decision(
     req: AccessRequest,
-    subject: dict = Depends(get_current_subject)
+    subject: dict = Depends(get_current_subject),
 ):
     now = datetime.now(timezone.utc)
     risk = calculate_risk(req.model_dump())
@@ -57,10 +57,15 @@ def access_decision(
         "resource": req.resource,
         "action": req.action,
         "ip_address": req.ip_address,
+        "user_agent": req.user_agent,
         "risk_score": risk["risk_score"],
-        "hour": now.hour
+        "risk_factors": risk["risk_factors"],
+        "hour": now.hour,
     }
+
     decision = evaluate_policy(opa_input)
+    allow = bool(decision.get("allow", False))
+    reason = decision.get("reason", "DENY_BY_DEFAULT")
 
     return {
         "trace_id": str(uuid4()),
@@ -72,7 +77,7 @@ def access_decision(
         "ip_address": req.ip_address,
         "risk_score": risk["risk_score"],
         "risk_factors": risk["risk_factors"],
-        "decision": "ALLOW" if decision["allow"] else "DENY",
-        "reason": decision["reason"],
-        "record_hash": None
+        "decision": "ALLOW" if allow else "DENY",
+        "reason": reason,
+        "record_hash": None,
     }
