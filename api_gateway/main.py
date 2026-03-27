@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 import json
+import time
+import io
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 
@@ -12,10 +15,11 @@ from config import settings
 from opa_client import evaluate_policy
 from risk_scorer import calculate_risk
 from forensic_engine import build_evidence_payload, make_record_hash, verify_chain
+from evidence_packager import create_evidence_package
 
 app = FastAPI(
     title="ZTForensics API Gateway",
-    version="2.3.0",
+    version="2.4.0",
     description="Zero Trust API Gateway with forensic evidence chaining.",
 )
 
@@ -41,7 +45,16 @@ class AccessRequest(BaseModel):
 def init_db() -> bool:
     global engine
     try:
-        engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
+        db_url = settings.database_url
+        print(f"[DB] connecting to: {db_url.split('@')[1] if '@' in db_url else 'unknown'}")
+        
+        engine = create_engine(db_url, future=True, pool_pre_ping=True, echo=False)
+        
+        # Test connection
+        with engine.begin() as conn:
+            conn.execute(text("SELECT 1"))
+        print("[DB] connection test passed")
+        
         ddl = """
         CREATE TABLE IF NOT EXISTS evidence_records (
             id BIGSERIAL PRIMARY KEY,
@@ -63,18 +76,24 @@ def init_db() -> bool:
         """
         with engine.begin() as conn:
             conn.execute(text(ddl))
-        print("[DB] initialized successfully")
+        print("[DB] table created/verified")
         return True
     except Exception as e:
-        print(f"[DB] init failed: {e}")
+        print(f"[DB] INIT FAILED: {type(e).__name__}: {e}")
         return False
 
 
 @app.on_event("startup")
 def on_startup():
     global DB_READY
-    DB_READY = init_db()
-    print(f"[DB] ready={DB_READY}")
+    # Retry logic for postgres startup delay
+    for attempt in range(5):
+        DB_READY = init_db()
+        if DB_READY:
+            break
+        print(f"[DB] retry {attempt + 1}/5, waiting 2s...")
+        time.sleep(2)
+    print(f"[DB] final status: {DB_READY}")
 
 
 @app.get("/health")
@@ -167,7 +186,7 @@ def access_decision(req: AccessRequest, subject: dict = Depends(get_current_subj
                     },
                 )
         except Exception as e:
-            print(f"[DB] write failed: {e}")
+            print(f"[DB] write failed: {type(e).__name__}: {e}")
 
     return {
         "trace_id": trace_id,
@@ -218,4 +237,84 @@ def verify_forensic_chain():
         result["total_records"] = len(records)
         return result
     except Exception as e:
-        return {"ok": False, "error": f"VERIFY_FAILED: {e}", "total_records": 0}
+        return {"ok": False, "error": f"VERIFY_FAILED: {type(e).__name__}: {e}", "total_records": 0}
+
+
+@app.get("/forensics/summary")
+def forensic_summary():
+    """Dashboard summary data"""
+    if not DB_READY or engine is None:
+        return {"ok": False, "error": "DB_NOT_READY"}
+
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT decision, reason, risk_score
+                    FROM evidence_records
+                    """
+                )
+            ).fetchall()
+
+        allow = sum(1 for r in rows if r[0] == "ALLOW")
+        deny = sum(1 for r in rows if r[0] == "DENY")
+        high_risk = sum(1 for r in rows if r[2] >= 70)
+
+        reason_counts = {}
+        for r in rows:
+            reason_counts[r[1]] = reason_counts.get(r[1], 0) + 1
+
+        return {
+            "ok": True,
+            "total_requests": len(rows),
+            "allowed": allow,
+            "denied": deny,
+            "high_risk_count": high_risk,
+            "allow_percentage": (100 * allow // len(rows)) if rows else 0,
+            "top_deny_reasons": sorted(reason_counts.items(), key=lambda x: -x[1])[:5],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/forensics/export")
+def export_evidence_package():
+    """Download all evidence as ZIP file"""
+    if not DB_READY or engine is None:
+        return {"ok": False, "error": "DB_NOT_READY"}
+
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, timestamp, trace_id, user_name, role, resource, action,
+                           ip_address, user_agent, risk_score, risk_factors,
+                           decision, reason, previous_hash, record_hash
+                    FROM evidence_records
+                    ORDER BY id ASC
+                    """
+                )
+            ).mappings().all()
+
+        records = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["risk_factors"] = json.loads(d["risk_factors"]) if isinstance(d["risk_factors"], str) else d["risk_factors"]
+            except Exception:
+                d["risk_factors"] = []
+            records.append(d)
+
+        zip_data = create_evidence_package(records)
+        
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+
+        return StreamingResponse(
+            io.BytesIO(zip_data),
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=forensic_evidence_{timestamp}.zip"},
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
