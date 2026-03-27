@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Live Dashboard{% endblock %}
+
+{% block content %}
+<h1>📊 Live Dashboard</h1>
+
+<!-- KPI Metrics -->
+<div class="card-grid">
+  <div class="card metric">
+    <div class="value">{{ summary.get('total_requests', 0) }}</div>
+    <div class="label">Total Requests</div>
+  </div>
+  <div class="card metric">
+    <div class="value" style="color:#276749">{{ summary.get('allowed', 0) }}</div>
+    <div class="label">Allowed</div>
+  </div>
+  <div class="card metric">
+    <div class="value" style="color:#c53030">{{ summary.get('denied', 0) }}</div>
+    <div class="label">Denied</div>
+  </div>
+  <div class="card metric">
+    <div class="value" style="color:#c05621">{{ summary.get('high_risk_count', 0) }}</div>
+    <div class="label">High Risk Events</div>
+  </div>
+  <div class="card metric">
+    <div class="value">{{ summary.get('allow_percentage', 0) }}%</div>
+    <div class="label">Allow Rate</div>
+  </div>
+  <div class="card metric">
+    <div class="value {% if chain.get('ok') %}style="color:#276749"{% else %}style="color:#c53030"{% endif %}">
+      {{ '✓' if chain.get('ok') else '✗' }}
+    </div>
+    <div class="label">Chain Integrity</div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem" class="mt">
+
+  <div class="card">
+    <h2>Allow / Deny Ratio</h2>
+    <div class="chart-wrap" style="height:220px">
+      <canvas id="donutChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Access Timeline (last 12 hours)</h2>
+    <div class="chart-wrap">
+      <canvas id="timelineChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Top deny reasons -->
+{% if summary.get('top_deny_reasons') %}
+<div class="card mt">
+  <h2>Top Decision Reasons</h2>
+  <table>
+    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for reason, count in summary.top_deny_reasons %}
+      <tr>
+        <td>{{ reason }}</td>
+        <td>{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+// Donut chart
+new Chart(document.getElementById('donutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Allowed', 'Denied'],
+    datasets: [{
+      data: [{{ summary.get('allowed', 0) }}, {{ summary.get('denied', 0) }}],
+      backgroundColor: ['#48bb78', '#fc8181'],
+      borderWidth: 2,
+    }]
+  },
+  options: { responsive: true, maintainAspectRatio: false,
+             plugins: { legend: { position: 'bottom' } } }
+});
+
+// Timeline bar chart
+const tl = {{ timeline | tojson }};
+const labels = tl.map(t => t.period);
+const allowed = tl.map(t => t.allowed);
+const denied  = tl.map(t => t.denied);
+
+new Chart(document.getElementById('timelineChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [
+      { label: 'Allowed', data: allowed, backgroundColor: '#68d391' },
+      { label: 'Denied',  data: denied,  backgroundColor: '#fc8181' },
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+    plugins: { legend: { position: 'top' } }
+  }
+});
+</script>
+{% endblock %}
