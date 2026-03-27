@@ -3,9 +3,9 @@ services:
     image: postgres:16.4
     container_name: ztf-postgres
     environment:
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -25,11 +25,6 @@ services:
       - ./policies:/policies:ro
     ports:
       - "8181:8181"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8181/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
     networks: [ztf-net]
 
   minio:
@@ -49,25 +44,20 @@ services:
   api-gateway:
     build: ./api_gateway
     container_name: ztf-api
-    env_file: .env
+    environment:
+      APP_ENV: ${APP_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      DATABASE_URL: ${DATABASE_URL}
+      OPA_URL: ${OPA_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ALGORITHMS: ${JWT_ALGORITHMS}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
-      opa:
-        condition: service_healthy
-    networks: [ztf-net]
-
-  dashboard:
-    build: ./dashboard
-    container_name: ztf-dashboard
-    environment:
-      API_GATEWAY_URL: http://api-gateway:8000
-    ports:
-      - "${DASHBOARD_PORT:-5000}:5000"
-    depends_on:
-      - api-gateway
+      - postgres
+      - opa
     networks: [ztf-net]
 
 volumes:
