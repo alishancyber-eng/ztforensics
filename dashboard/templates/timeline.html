@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Timeline{% endblock %}
+
+{% block content %}
+<h1>📅 Access Timeline</h1>
+
+<!-- Hourly breakdown -->
+<div class="card">
+  <h2>Hourly Access Activity</h2>
+  <div class="chart-wrap">
+    <canvas id="hourChart"></canvas>
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>Daily Access Activity</h2>
+  <div class="chart-wrap">
+    <canvas id="dayChart"></canvas>
+  </div>
+</div>
+
+<!-- Hourly table -->
+{% if hour_timeline %}
+<div class="card mt">
+  <h2>Hourly Detail</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Period</th><th>Total</th><th>Allowed</th><th>Denied</th>
+        <th>Avg Risk</th><th>High Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in hour_timeline %}
+      <tr>
+        <td>{{ row.period }}</td>
+        <td>{{ row.total_requests }}</td>
+        <td><span class="badge badge-green">{{ row.allowed }}</span></td>
+        <td><span class="badge badge-red">{{ row.denied }}</span></td>
+        <td>{{ row.avg_risk_score }}</td>
+        <td>
+          {% if row.high_risk_events > 0 %}
+            <span class="badge badge-orange">{{ row.high_risk_events }}</span>
+          {% else %}
+            0
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card mt"><p>No timeline data available yet.</p></div>
+{% endif %}
+
+<script>
+const hourData = {{ hour_timeline | tojson }};
+const dayData  = {{ day_timeline  | tojson }};
+
+function buildBarChart(id, data) {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.period),
+      datasets: [
+        { label: 'Allowed',    data: data.map(d => d.allowed),          backgroundColor: '#68d391' },
+        { label: 'Denied',     data: data.map(d => d.denied),           backgroundColor: '#fc8181' },
+        { label: 'Avg Risk ×2',data: data.map(d => d.avg_risk_score*2), backgroundColor: 'rgba(237,137,54,.5)',
+          type: 'line', yAxisID: 'y', borderColor: '#ed8936', borderWidth: 2, pointRadius: 3 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true }
+      },
+      plugins: { legend: { position: 'top' } }
+    }
+  });
+}
+
+buildBarChart('hourChart', hourData);
+buildBarChart('dayChart',  dayData);
+</script>
+{% endblock %}

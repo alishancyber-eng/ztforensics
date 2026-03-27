@@ -16,6 +16,9 @@ from opa_client import evaluate_policy
 from risk_scorer import calculate_risk
 from forensic_engine import build_evidence_payload, make_record_hash, verify_chain
 from evidence_packager import create_evidence_package
+from timeline_analyzer import group_records_by_period
+from anomaly_detector import detect_anomalies
+from report_generator import generate_pdf_report
 
 app = FastAPI(
     title="ZTForensics API Gateway",
@@ -315,6 +318,98 @@ def export_evidence_package():
             io.BytesIO(zip_data),
             media_type="application/zip",
             headers={"Content-Disposition": f"attachment; filename=forensic_evidence_{timestamp}.zip"},
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Batch 3: Advanced forensics endpoints
+# ---------------------------------------------------------------------------
+
+def _fetch_all_records() -> list:
+    """Helper: fetch all evidence records from DB as list of dicts."""
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, timestamp, trace_id, user_name, role, resource, action,
+                       ip_address, user_agent, risk_score, risk_factors,
+                       decision, reason, previous_hash, record_hash
+                FROM evidence_records
+                ORDER BY id ASC
+                """
+            )
+        ).mappings().all()
+    records = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["risk_factors"] = (
+                json.loads(d["risk_factors"])
+                if isinstance(d["risk_factors"], str)
+                else d["risk_factors"]
+            )
+        except Exception:
+            d["risk_factors"] = []
+        records.append(d)
+    return records
+
+
+@app.get("/forensics/timeline")
+def forensic_timeline(interval: str = "hour"):
+    """Time-series analysis of access decisions grouped by hour or day."""
+    if not DB_READY or engine is None:
+        return {"ok": False, "error": "DB_NOT_READY", "timeline": []}
+
+    if interval not in ("hour", "day"):
+        interval = "hour"
+
+    try:
+        records = _fetch_all_records()
+        timeline = group_records_by_period(records, interval=interval)
+        return {"ok": True, "interval": interval, "timeline": timeline}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "timeline": []}
+
+
+@app.get("/forensics/anomalies")
+def forensic_anomalies():
+    """Detect suspicious patterns in the access log."""
+    if not DB_READY or engine is None:
+        return {"ok": False, "error": "DB_NOT_READY", "anomalies": []}
+
+    try:
+        records = _fetch_all_records()
+        anomalies = detect_anomalies(records)
+        return {"ok": True, "total": len(anomalies), "anomalies": anomalies}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "anomalies": []}
+
+
+@app.get("/forensics/export-pdf")
+def export_pdf_report():
+    """Generate and download a professional PDF forensic evidence report."""
+    if not DB_READY or engine is None:
+        return {"ok": False, "error": "DB_NOT_READY"}
+
+    try:
+        records = _fetch_all_records()
+        timeline = group_records_by_period(records, interval="hour")
+        anomalies = detect_anomalies(records)
+
+        chain_result = verify_chain(records)
+        chain_ok = chain_result.get("ok", False)
+
+        pdf_bytes = generate_pdf_report(records, timeline, anomalies, chain_ok)
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=forensic_report_{ts}.pdf"
+            },
         )
     except Exception as e:
         return {"ok": False, "error": str(e)}

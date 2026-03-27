@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Hash Chain Verification{% endblock %}
+
+{% block content %}
+<h1>🔗 Hash Chain Verification</h1>
+
+<div class="card">
+  {% if chain.get('ok') %}
+  <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
+    <span style="font-size:2rem">✅</span>
+    <div>
+      <strong style="font-size:1.1rem;color:#276749">Chain Verified — No Tampering Detected</strong><br>
+      <span style="color:#718096">{{ chain.get('checked', 0) }} records checked out of {{ chain.get('total_records', 0) }} total.</span>
+    </div>
+  </div>
+  {% else %}
+  <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
+    <span style="font-size:2rem">🚨</span>
+    <div>
+      <strong style="font-size:1.1rem;color:#c53030">CHAIN BROKEN — Tampering Detected!</strong><br>
+      {% if chain.get('broken_at_id') %}
+      <span style="color:#718096">Integrity failure at record ID {{ chain.broken_at_id }}: {{ chain.get('error', '') }}</span>
+      {% else %}
+      <span style="color:#718096">{{ chain.get('error', 'Unknown error') }}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <table style="margin-top:.5rem">
+    <tbody>
+      <tr><td><strong>Status</strong></td><td>
+        <span class="badge {% if chain.get('ok') %}badge-green{% else %}badge-red{% endif %}">
+          {{ 'VALID' if chain.get('ok') else 'BROKEN' }}
+        </span>
+      </td></tr>
+      <tr><td><strong>Records Checked</strong></td><td>{{ chain.get('checked', 0) }}</td></tr>
+      <tr><td><strong>Total Records</strong></td><td>{{ chain.get('total_records', 0) }}</td></tr>
+      <tr><td><strong>Message</strong></td><td>{{ chain.get('message', chain.get('error', '—')) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card mt">
+  <h2>How Hash Chain Verification Works</h2>
+  <ol style="line-height:1.8;padding-left:1.2rem;font-size:.9rem">
+    <li>Each access decision creates a <strong>cryptographically linked record</strong>.</li>
+    <li>Record N's hash is computed over all its fields <em>plus</em> the previous record's hash.</li>
+    <li>If any field in any record is changed, its hash changes, breaking all subsequent links.</li>
+    <li>The verifier replays every record from the genesis (previous_hash="0") and recomputes each hash.</li>
+    <li>A mismatch at any point proves tampering occurred at that record.</li>
+  </ol>
+</div>
+{% endblock %}

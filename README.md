@@ -16,12 +16,18 @@ Enterprise-grade **Zero Trust API Gateway** with cryptographic **forensic eviden
 
 ✅ **Evidence Export & Audit**
 - ZIP package export with JSON records + verification proof
+- **PDF forensic report** (executive summary, timeline, anomalies, hash chain proof)
 - Human-readable forensic summaries
 - Dashboard API for real-time metrics
 
+✅ **Advanced Analytics (Batch 3)**
+- Time-series timeline API with hourly/daily grouping
+- Anomaly detection (repeated denials, privilege escalation, off-hours access, resource hopping)
+- Flask web dashboard at http://localhost:5000
+
 ✅ **Production Ready**
 - PostgreSQL persistence
-- Docker Compose stack
+- Docker Compose stack (API Gateway + Dashboard)
 - FastAPI with async support
 - Structured logging
 
@@ -297,10 +303,17 @@ docker compose up --build -d
 docker logs -f ztf-api
 ```
 
-### Run Tests (future)
+### Run Tests
 
 ```bash
-docker compose exec ztf-api pytest tests/
+# Install test dependencies
+pip install -r requirements.txt
+
+# Run all unit tests
+pytest tests/ -v
+
+# Run with coverage report
+pytest tests/ --cov=api_gateway --cov-report=term-missing
 ```
 
 ### API Documentation
@@ -308,6 +321,114 @@ docker compose exec ztf-api pytest tests/
 ```
 http://localhost:8000/docs
 ```
+
+---
+
+## Dashboard
+
+The Flask dashboard is accessible at **http://localhost:5000** after running `docker compose up`.
+
+| Page | URL | Description |
+|---|---|---|
+| Home | `/` | Live KPI metrics + allow/deny chart |
+| Timeline | `/dashboard/timeline` | Hourly & daily access activity charts |
+| Anomalies | `/dashboard/anomalies` | Detected suspicious patterns |
+| Verification | `/dashboard/verify` | Hash chain integrity status |
+| Evidence | `/dashboard/evidence` | Download ZIP and PDF report |
+
+---
+
+## Advanced API Endpoints (Batch 3)
+
+### Timeline Analysis
+
+**GET** `/forensics/timeline?interval=hour`
+
+```bash
+curl "http://localhost:8000/forensics/timeline?interval=hour"
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "interval": "hour",
+  "timeline": [
+    {
+      "period": "2026-03-27 19:00",
+      "total_requests": 5,
+      "allowed": 4,
+      "denied": 1,
+      "avg_risk_score": 20,
+      "high_risk_events": 1
+    }
+  ]
+}
+```
+
+### Anomaly Detection
+
+**GET** `/forensics/anomalies`
+
+```bash
+curl http://localhost:8000/forensics/anomalies
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "total": 2,
+  "anomalies": [
+    {
+      "type": "repeated_denials",
+      "user": "ali",
+      "count": 5,
+      "confidence": 0.80,
+      "severity": "HIGH",
+      "timestamp": "2026-03-27T20:00:00+00:00"
+    }
+  ]
+}
+```
+
+### PDF Forensic Report
+
+**GET** `/forensics/export-pdf`
+
+```bash
+curl http://localhost:8000/forensics/export-pdf -o report.pdf
+```
+
+Generates a professional PDF report including executive summary, timeline, anomalies, and hash chain verification proof.
+
+---
+
+## Attack Simulator
+
+Generate realistic attack scenarios to populate forensic evidence for demo:
+
+```bash
+# Run all attack scenarios
+python attack_simulator/simulate.py
+
+# Run a specific scenario
+python attack_simulator/simulate.py --scenario brute-force
+python attack_simulator/simulate.py --scenario privilege
+python attack_simulator/simulate.py --scenario off-hours
+python attack_simulator/simulate.py --scenario hopping
+
+# Point at a different API URL
+python attack_simulator/simulate.py --api-url http://localhost:8000
+```
+
+Scenarios:
+| Scenario | Description |
+|---|---|
+| `brute-force` | 10 failed access attempts from same attacker IP |
+| `privilege` | Employee trying to access 5 admin-only resources |
+| `off-hours` | Access from foreign IP with curl user-agent |
+| `hopping` | Single user rapidly accessing 7 different resources |
 
 ---
 
@@ -340,8 +461,13 @@ MIT
 
 ## Next Steps (Roadmap)
 
+- [x] Timeline API with hourly/daily grouping
+- [x] Anomaly detection (repeated denials, privilege escalation, off-hours, resource hopping)
+- [x] PDF forensic report (ReportLab)
+- [x] Flask dashboard UI (port 5000)
+- [x] Unit tests (52 tests, >80% coverage on core modules)
+- [x] Attack simulator
 - [ ] Keycloak JWT integration
-- [ ] Dashboard UI (React)
 - [ ] S3 evidence archival
 - [ ] Elasticsearch integration
 - [ ] GraphQL API layer

@@ -60,6 +60,19 @@ services:
       - opa
     networks: [ztf-net]
 
+  dashboard:
+    build: ./dashboard
+    container_name: ztf-dashboard
+    environment:
+      API_BASE_URL: http://api-gateway:8000
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8000}
+      DASHBOARD_PORT: ${DASHBOARD_PORT:-5000}
+    ports:
+      - "${DASHBOARD_PORT:-5000}:5000"
+    depends_on:
+      - api-gateway
+    networks: [ztf-net]
+
 volumes:
   postgres_data:
   minio_data:
