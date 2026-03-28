@@ -1,0 +1,81 @@
+version: '3.8'
+services:
+  ztf-postgres:
+    image: postgres:16.4
+    container_name: ztf-postgres
+    environment:
+      POSTGRES_USER: ztf
+      POSTGRES_PASSWORD: ztfpass
+      POSTGRES_DB: ztfdb
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ztf -d ztfdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ztf-net
+
+  ztf-minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    container_name: ztf-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - ztf-net
+
+  ztf-opa:
+    image: openpolicyagent/opa:0.68.0
+    container_name: ztf-opa
+    command: run --server --watch /policies
+    volumes:
+      - ./opa/policies:/policies
+    ports:
+      - "8181:8181"
+    networks:
+      - ztf-net
+
+  ztf-api:
+    build:
+      context: .
+      dockerfile: api_gateway/Dockerfile
+    container_name: ztf-api
+    environment:
+      DATABASE_URL: postgresql://ztf:ztfpass@ztf-postgres:5432/ztfdb
+      OPA_URL: http://ztf-opa:8181
+      MINIO_ENDPOINT: ztf-minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+    ports:
+      - "8000:8000"
+    depends_on:
+      ztf-postgres:
+        condition: service_healthy
+      ztf-opa:
+        condition: service_started
+    networks:
+      - ztf-net
+
+  ztf-dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: ztf-dashboard
+    environment:
+      API_GATEWAY_URL: http://ztf-api:8000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - ztf-api
+    networks:
+      - ztf-net
+
+networks:
+  ztf-net:
+    name: ztforensics_ztf-net
