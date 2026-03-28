@@ -36,6 +36,10 @@ def client():
         import main as app_module
         importlib.reload(app_module)
 
+        from auth_middleware import get_current_user
+        from schemas import UserContext
+        app_module.app.dependency_overrides[get_current_user] = lambda: UserContext(user_id="testuser")
+
         from fastapi.testclient import TestClient
         tc = TestClient(app_module.app, raise_server_exceptions=False)
         yield tc

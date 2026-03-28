@@ -15,9 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from auth_middleware import get_current_user
+from auth_routes import router as auth_router
 from blockchain import BlockchainManager
 from database import AccessLog, get_db, init_db
 from risk_scoring import RiskScorer
+from schemas import UserContext
 from storage import StorageManager
 
 load_dotenv()
@@ -69,6 +72,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +233,9 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
 
 
 @app.get("/forensics/verify-chain")
-async def verify_chain() -> dict[str, Any]:
+async def verify_chain(
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
     """Verify the integrity of the forensic blockchain."""
     result = blockchain_manager.verify_chain()
     stats = blockchain_manager.get_chain_stats()
@@ -236,7 +243,10 @@ async def verify_chain() -> dict[str, Any]:
 
 
 @app.get("/forensics/summary")
-async def forensics_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def forensics_summary(
+    db: Session = Depends(get_db),
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
     """Return aggregate statistics from the access log database."""
     from sqlalchemy import func
 
@@ -274,7 +284,10 @@ async def forensics_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.get("/forensics/export")
-async def forensics_export(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def forensics_export(
+    db: Session = Depends(get_db),
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
     """Export all forensic evidence as a JSON structure."""
     logs = db.query(AccessLog).order_by(AccessLog.timestamp.asc()).all()
     chain_stats = blockchain_manager.get_chain_stats()
