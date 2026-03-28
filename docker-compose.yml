@@ -1,82 +1,263 @@
+version: '3.8'
+
+# ============================================================
+# ZTForensics Docker Compose
+# Services: postgres, keycloak-db, keycloak, minio, opa, api, dashboard
+# ============================================================
+
 services:
-  postgres:
+
+  # ----------------------------------------------------------
+  # Application database (PostgreSQL)
+  # ----------------------------------------------------------
+  ztf-postgres:
     image: postgres:16.4
     container_name: ztf-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ztf
+      POSTGRES_PASSWORD: ztfpass
+      POSTGRES_DB: ztfdb
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ztf-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ztf -d ztfdb"]
       interval: 10s
       timeout: 5s
-      retries: 10
-    networks: [ztf-net]
+      retries: 5
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  opa:
-    image: openpolicyagent/opa:0.68.0
-    container_name: ztf-opa
-    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
-    volumes:
-      - ./policies:/policies:ro
+  # ----------------------------------------------------------
+  # Keycloak database (separate PostgreSQL instance)
+  # ----------------------------------------------------------
+  ztf-keycloak-db:
+    image: postgres:16.4
+    container_name: ztf-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloakpass
+      POSTGRES_DB: keycloakdb
     ports:
-      - "8181:8181"
-    networks: [ztf-net]
+      - "5433:5432"
+    volumes:
+      - ztf-keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloakdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  minio:
+  # ----------------------------------------------------------
+  # Keycloak identity provider
+  # ----------------------------------------------------------
+  ztf-keycloak:
+    image: quay.io/keycloak/keycloak:26.1.4
+    container_name: ztf-keycloak
+    restart: unless-stopped
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://ztf-keycloak-db:5432/keycloakdb
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloakpass
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin123}
+    ports:
+      - "8080:8080"
+    depends_on:
+      ztf-keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ----------------------------------------------------------
+  # MinIO object storage
+  # ----------------------------------------------------------
+  ztf-minio:
     image: minio/minio:RELEASE.2025-02-28T09-55-16Z
     container_name: ztf-minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
-    networks: [ztf-net]
+      - ztf-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  api-gateway:
-    build: ./api_gateway
-    container_name: ztf-api
-    environment:
-      APP_ENV: ${APP_ENV}
-      LOG_LEVEL: ${LOG_LEVEL}
-      DATABASE_URL: ${DATABASE_URL}
-      OPA_URL: ${OPA_URL}
-      JWT_ISSUER: ${JWT_ISSUER}
-      JWT_AUDIENCE: ${JWT_AUDIENCE}
-      JWT_JWKS_URL: ${JWT_JWKS_URL}
-      JWT_ALGORITHMS: ${JWT_ALGORITHMS}
+  # ----------------------------------------------------------
+  # Open Policy Agent
+  # ----------------------------------------------------------
+  ztf-opa:
+    image: openpolicyagent/opa:0.68.0
+    container_name: ztf-opa
+    restart: unless-stopped
+    command: run --server --watch /policies
+    volumes:
+      - ./opa/policies:/policies:ro
     ports:
-      - "${API_PORT:-8000}:8000"
-    depends_on:
-      - postgres
-      - opa
-    networks: [ztf-net]
+      - "8181:8181"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8181/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  dashboard:
-    build: ./dashboard
-    container_name: ztf-dashboard
+  # ----------------------------------------------------------
+  # API Gateway (FastAPI)
+  # ----------------------------------------------------------
+  ztf-api:
+    build:
+      context: .
+      dockerfile: api_gateway/Dockerfile
+    container_name: ztf-api
+    restart: unless-stopped
     environment:
-      API_BASE_URL: http://api-gateway:8000
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8000}
-      DASHBOARD_PORT: ${DASHBOARD_PORT:-5000}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://ztf:ztfpass@ztf-postgres:5432/ztfdb}
+      OPA_URL: ${OPA_URL:-http://ztf-opa:8181}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-ztf-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-forensics-evidence}
+      # Keycloak integration
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://ztf-keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-forensics}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api-gateway}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-3spkr3Fjhf9HcXivHWMRFqKdLehSoKLC}
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-False}
+      LOG_LEVEL: ${API_GATEWAY_LOG_LEVEL:-INFO}
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      ztf-postgres:
+        condition: service_healthy
+      ztf-opa:
+        condition: service_healthy
+      ztf-keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ----------------------------------------------------------
+  # Dashboard (Flask)
+  # ----------------------------------------------------------
+  ztf-dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: ztf-dashboard
+    restart: unless-stopped
+    environment:
+      API_GATEWAY_URL: ${API_GATEWAY_URL:-http://ztf-api:8000}
+      # Keycloak client config for dashboard login
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://localhost:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-forensics}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api-gateway}
+      KEYCLOAK_LOGIN_URL: ${KEYCLOAK_LOGIN_URL:-http://localhost:8080/realms/forensics/protocol/openid-connect/auth}
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-False}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "${DASHBOARD_PORT:-5000}:5000"
     depends_on:
-      - api-gateway
-    networks: [ztf-net]
+      ztf-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - ztf-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+# ============================================================
+# Named volumes
+# ============================================================
 volumes:
-  postgres_data:
-  minio_data:
+  ztf-postgres-data:
+    name: ztforensics_postgres_data
+  ztf-keycloak-db-data:
+    name: ztforensics_keycloak_db_data
+  ztf-minio-data:
+    name: ztforensics_minio_data
 
+# ============================================================
+# Networks
+# ============================================================
 networks:
   ztf-net:
-    driver: bridge
+    name: ztforensics_ztf-net

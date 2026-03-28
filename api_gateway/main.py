@@ -1,415 +1,316 @@
-from datetime import datetime, timezone
-from uuid import uuid4
+"""
+ZTForensics API Gateway – main FastAPI application.
+"""
 import json
-import time
-import io
+import logging
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Optional
 
-from fastapi import Depends, FastAPI
+import httpx
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
-from auth import get_current_subject
-from config import settings
-from opa_client import evaluate_policy
-from risk_scorer import calculate_risk
-from forensic_engine import build_evidence_payload, make_record_hash, verify_chain
-from evidence_packager import create_evidence_package
-from timeline_analyzer import group_records_by_period
-from anomaly_detector import detect_anomalies
-from report_generator import generate_pdf_report
+from auth_middleware import get_current_user
+from auth_routes import router as auth_router
+from blockchain import BlockchainManager
+from database import AccessLog, get_db, init_db
+from risk_scoring import RiskScorer
+from schemas import UserContext
+from storage import StorageManager
+
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+OPA_URL: str = os.getenv("OPA_URL", "http://localhost:8181")
+
+# Module-level singletons
+blockchain_manager = BlockchainManager()
+risk_scorer = RiskScorer()
+
+try:
+    storage_manager: Optional[StorageManager] = StorageManager()
+except Exception:
+    storage_manager = None
+    logger.warning("StorageManager unavailable – storage features disabled.")
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Startup / shutdown lifecycle handler."""
+    logger.info("Starting ZTForensics API Gateway…")
+    init_db()
+    yield
+    logger.info("ZTForensics API Gateway shutting down.")
+
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="ZTForensics API Gateway",
-    version="2.4.0",
-    description="Zero Trust API Gateway with forensic evidence chaining.",
+    version="1.0.0",
+    description="Zero Trust Forensic Gateway",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.app_env == "development" else [],
-    allow_credentials=False,
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-engine = None
-DB_READY = False
+app.include_router(auth_router)
 
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
 
 class AccessRequest(BaseModel):
-    resource: str = Field(..., examples=["/api/documents"])
-    action: str = Field(..., examples=["read"])
-    ip_address: str = Field(..., examples=["192.168.1.100"])
-    user_agent: str = Field(..., examples=["Mozilla/5.0"])
+    """Incoming access-control request payload."""
+
+    user_id: str = Field(..., min_length=1)
+    resource: str = Field(..., min_length=1)
+    action: str = Field(..., min_length=1)
+    ip_address: str = Field(default="")
+    user_agent: str = Field(default="")
+    metadata: Optional[dict[str, Any]] = Field(default=None)
 
 
-def init_db() -> bool:
-    global engine
+class AccessResponse(BaseModel):
+    """Response returned after an access-control decision."""
+
+    decision: str
+    risk_score: float
+    reason: str
+    chain_hash: str
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+async def _query_opa(request: AccessRequest) -> dict[str, Any]:
+    """Send the request to OPA and return the parsed decision.
+
+    Falls back to *allow* when OPA is unreachable.
+    """
+    payload = {
+        "input": {
+            "user_id": request.user_id,
+            "resource": request.resource,
+            "action": request.action,
+            "ip_address": request.ip_address,
+            "user_agent": request.user_agent,
+            "metadata": request.metadata or {},
+        }
+    }
     try:
-        db_url = settings.database_url
-        print(f"[DB] connecting to: {db_url.split('@')[1] if '@' in db_url else 'unknown'}")
-        
-        engine = create_engine(db_url, future=True, pool_pre_ping=True, echo=False)
-        
-        # Test connection
-        with engine.begin() as conn:
-            conn.execute(text("SELECT 1"))
-        print("[DB] connection test passed")
-        
-        ddl = """
-        CREATE TABLE IF NOT EXISTS evidence_records (
-            id BIGSERIAL PRIMARY KEY,
-            timestamp TEXT NOT NULL,
-            trace_id TEXT NOT NULL,
-            user_name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            resource TEXT NOT NULL,
-            action TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            user_agent TEXT NOT NULL,
-            risk_score INT NOT NULL,
-            risk_factors TEXT NOT NULL,
-            decision TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            previous_hash TEXT NOT NULL,
-            record_hash TEXT NOT NULL
-        );
-        """
-        with engine.begin() as conn:
-            conn.execute(text(ddl))
-        print("[DB] table created/verified")
-        return True
-    except Exception as e:
-        print(f"[DB] INIT FAILED: {type(e).__name__}: {e}")
-        return False
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{OPA_URL}/v1/data/ztf/authz",
+                json=payload,
+            )
+            resp.raise_for_status()
+            result = resp.json().get("result", {})
+            return result
+    except Exception as exc:
+        logger.warning("OPA unreachable (%s); defaulting to allow.", exc)
+        return {"allow": True}
 
 
-@app.on_event("startup")
-def on_startup():
-    global DB_READY
-    # Retry logic for postgres startup delay
-    for attempt in range(5):
-        DB_READY = init_db()
-        if DB_READY:
-            break
-        print(f"[DB] retry {attempt + 1}/5, waiting 2s...")
-        time.sleep(2)
-    print(f"[DB] final status: {DB_READY}")
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+async def root() -> dict[str, str]:
+    """Root endpoint – service identification."""
+    return {"message": "ZTForensics API Gateway", "version": "1.0.0"}
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "api-gateway", "env": settings.app_env, "db_ready": DB_READY}
+async def health(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Health-check endpoint."""
+    db_status = "up"
+    try:
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+    except Exception:
+        db_status = "down"
 
-
-@app.get("/")
-def root():
-    return {"message": "ZTForensics API Gateway running", "docs": "/docs"}
-
-
-@app.post("/access")
-def access_decision(req: AccessRequest, subject: dict = Depends(get_current_subject)):
-    now = datetime.now(timezone.utc)
-    trace_id = str(uuid4())
-    risk = calculate_risk(req.model_dump())
-
-    opa_input = {
-        "user": subject["sub"],
-        "role": subject["role"],
-        "resource": req.resource,
-        "action": req.action,
-        "ip_address": req.ip_address,
-        "user_agent": req.user_agent,
-        "risk_score": risk["risk_score"],
-        "risk_factors": risk["risk_factors"],
-        "hour": now.hour,
-    }
-
-    decision_obj = evaluate_policy(opa_input)
-    allow = bool(decision_obj.get("allow", False))
-    reason = decision_obj.get("reason", "DENY_BY_DEFAULT")
-    decision = "ALLOW" if allow else "DENY"
-
-    previous_hash = "0"
-    record_hash = None
-
-    if DB_READY and engine is not None:
-        try:
-            with engine.begin() as conn:
-                prev = conn.execute(text("SELECT record_hash FROM evidence_records ORDER BY id DESC LIMIT 1")).fetchone()
-                previous_hash = prev[0] if prev else "0"
-
-                payload = build_evidence_payload(
-                    user=subject["sub"],
-                    role=subject["role"],
-                    resource=req.resource,
-                    action=req.action,
-                    ip_address=req.ip_address,
-                    user_agent=req.user_agent,
-                    risk_score=risk["risk_score"],
-                    risk_factors=risk["risk_factors"],
-                    decision=decision,
-                    reason=reason,
-                    previous_hash=previous_hash,
-                    trace_id=trace_id,
-                )
-                record_hash = make_record_hash(payload)
-
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO evidence_records (
-                            timestamp, trace_id, user_name, role, resource, action,
-                            ip_address, user_agent, risk_score, risk_factors,
-                            decision, reason, previous_hash, record_hash
-                        ) VALUES (
-                            :timestamp, :trace_id, :user_name, :role, :resource, :action,
-                            :ip_address, :user_agent, :risk_score, :risk_factors,
-                            :decision, :reason, :previous_hash, :record_hash
-                        )
-                        """
-                    ),
-                    {
-                        "timestamp": payload["timestamp"],
-                        "trace_id": payload["trace_id"],
-                        "user_name": payload["user"],
-                        "role": payload["role"],
-                        "resource": payload["resource"],
-                        "action": payload["action"],
-                        "ip_address": payload["ip_address"],
-                        "user_agent": payload["user_agent"],
-                        "risk_score": payload["risk_score"],
-                        "risk_factors": json.dumps(payload["risk_factors"]),
-                        "decision": payload["decision"],
-                        "reason": payload["reason"],
-                        "previous_hash": payload["previous_hash"],
-                        "record_hash": record_hash,
-                    },
-                )
-        except Exception as e:
-            print(f"[DB] write failed: {type(e).__name__}: {e}")
+    storage_status = "up" if storage_manager is not None else "down"
 
     return {
-        "trace_id": trace_id,
-        "timestamp": now.isoformat(),
-        "user": subject["sub"],
-        "role": subject["role"],
-        "resource": req.resource,
-        "action": req.action,
-        "ip_address": req.ip_address,
-        "risk_score": risk["risk_score"],
-        "risk_factors": risk["risk_factors"],
-        "decision": decision,
-        "reason": reason,
-        "previous_hash": previous_hash,
-        "record_hash": record_hash,
+        "status": "healthy",
+        "services": {
+            "database": db_status,
+            "blockchain": "up",
+            "storage": storage_status,
+        },
     }
+
+
+@app.post("/access", response_model=AccessResponse)
+async def access(request: AccessRequest, db: Session = Depends(get_db)) -> AccessResponse:
+    """Evaluate an access request through OPA and log the decision."""
+    # 1. Calculate risk score
+    risk_score = risk_scorer.calculate_risk(
+        {
+            "ip_address": request.ip_address,
+            "user_agent": request.user_agent,
+            "resource": request.resource,
+            "action": request.action,
+            "user_id": request.user_id,
+        }
+    )
+
+    # 2. Query OPA
+    opa_result = await _query_opa(request)
+    allowed: bool = bool(opa_result.get("allow", True))
+
+    if not allowed:
+        risk_scorer.record_failure(request.user_id)
+
+    decision = "allow" if allowed else "deny"
+    reason = opa_result.get("deny_reason", "Policy decision") if not allowed else "Access granted"
+
+    # 3. Build chain entry
+    log_entry = {
+        "user_id": request.user_id,
+        "resource": request.resource,
+        "action": request.action,
+        "decision": decision,
+        "risk_score": risk_score,
+        "ip_address": request.ip_address,
+        "user_agent": request.user_agent,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    chain_hash = blockchain_manager.add_block(log_entry)
+
+    # 4. Persist to database
+    access_log = AccessLog(
+        user_id=request.user_id,
+        resource=request.resource,
+        action=request.action,
+        decision=decision,
+        risk_score=risk_score,
+        ip_address=request.ip_address,
+        user_agent=request.user_agent,
+        chain_hash=chain_hash,
+    )
+    db.add(access_log)
+    db.commit()
+
+    logger.info(
+        "Access %s: user=%s resource=%s action=%s risk=%.2f",
+        decision,
+        request.user_id,
+        request.resource,
+        request.action,
+        risk_score,
+    )
+
+    return AccessResponse(
+        decision=decision,
+        risk_score=risk_score,
+        reason=reason,
+        chain_hash=chain_hash,
+    )
 
 
 @app.get("/forensics/verify-chain")
-def verify_forensic_chain():
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY", "total_records": 0}
-
-    try:
-        with engine.begin() as conn:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT id, timestamp, trace_id, user_name, role, resource, action,
-                           ip_address, user_agent, risk_score, risk_factors,
-                           decision, reason, previous_hash, record_hash
-                    FROM evidence_records
-                    ORDER BY id ASC
-                    """
-                )
-            ).mappings().all()
-
-        records = []
-        for r in rows:
-            d = dict(r)
-            try:
-                d["risk_factors"] = json.loads(d["risk_factors"]) if isinstance(d["risk_factors"], str) else d["risk_factors"]
-            except Exception:
-                d["risk_factors"] = []
-            records.append(d)
-
-        result = verify_chain(records)
-        result["total_records"] = len(records)
-        return result
-    except Exception as e:
-        return {"ok": False, "error": f"VERIFY_FAILED: {type(e).__name__}: {e}", "total_records": 0}
+async def verify_chain(
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Verify the integrity of the forensic blockchain."""
+    result = blockchain_manager.verify_chain()
+    stats = blockchain_manager.get_chain_stats()
+    return {**result, **stats}
 
 
 @app.get("/forensics/summary")
-def forensic_summary():
-    """Dashboard summary data"""
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY"}
+async def forensics_summary(
+    db: Session = Depends(get_db),
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return aggregate statistics from the access log database."""
+    from sqlalchemy import func
 
-    try:
-        with engine.begin() as conn:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT decision, reason, risk_score
-                    FROM evidence_records
-                    """
-                )
-            ).fetchall()
+    total = db.query(func.count(AccessLog.id)).scalar() or 0
+    allowed = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "allow").scalar() or 0
+    denied = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "deny").scalar() or 0
+    high_risk = (
+        db.query(func.count(AccessLog.id)).filter(AccessLog.risk_score >= 0.75).scalar() or 0
+    )
 
-        allow = sum(1 for r in rows if r[0] == "ALLOW")
-        deny = sum(1 for r in rows if r[0] == "DENY")
-        high_risk = sum(1 for r in rows if r[2] >= 70)
+    recent_logs = (
+        db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(10).all()
+    )
 
-        reason_counts = {}
-        for r in rows:
-            reason_counts[r[1]] = reason_counts.get(r[1], 0) + 1
-
-        return {
-            "ok": True,
-            "total_requests": len(rows),
-            "allowed": allow,
-            "denied": deny,
-            "high_risk_count": high_risk,
-            "allow_percentage": (100 * allow // len(rows)) if rows else 0,
-            "top_deny_reasons": sorted(reason_counts.items(), key=lambda x: -x[1])[:5],
+    recent = [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "user_id": log.user_id,
+            "resource": log.resource,
+            "action": log.action,
+            "decision": log.decision,
+            "risk_score": log.risk_score,
         }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+        for log in recent_logs
+    ]
+
+    return {
+        "total_requests": total,
+        "allowed": allowed,
+        "denied": denied,
+        "high_risk_events": high_risk,
+        "recent_logs": recent,
+    }
 
 
 @app.get("/forensics/export")
-def export_evidence_package():
-    """Download all evidence as ZIP file"""
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY"}
+async def forensics_export(
+    db: Session = Depends(get_db),
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Export all forensic evidence as a JSON structure."""
+    logs = db.query(AccessLog).order_by(AccessLog.timestamp.asc()).all()
+    chain_stats = blockchain_manager.get_chain_stats()
 
-    try:
-        with engine.begin() as conn:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT id, timestamp, trace_id, user_name, role, resource, action,
-                           ip_address, user_agent, risk_score, risk_factors,
-                           decision, reason, previous_hash, record_hash
-                    FROM evidence_records
-                    ORDER BY id ASC
-                    """
-                )
-            ).mappings().all()
+    evidence = [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "user_id": log.user_id,
+            "resource": log.resource,
+            "action": log.action,
+            "decision": log.decision,
+            "risk_score": log.risk_score,
+            "ip_address": log.ip_address,
+            "user_agent": log.user_agent,
+            "chain_hash": log.chain_hash,
+        }
+        for log in logs
+    ]
 
-        records = []
-        for r in rows:
-            d = dict(r)
-            try:
-                d["risk_factors"] = json.loads(d["risk_factors"]) if isinstance(d["risk_factors"], str) else d["risk_factors"]
-            except Exception:
-                d["risk_factors"] = []
-            records.append(d)
-
-        zip_data = create_evidence_package(records)
-        
-        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-
-        return StreamingResponse(
-            io.BytesIO(zip_data),
-            media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename=forensic_evidence_{timestamp}.zip"},
-        )
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-# ---------------------------------------------------------------------------
-# Batch 3: Advanced forensics endpoints
-# ---------------------------------------------------------------------------
-
-def _fetch_all_records() -> list:
-    """Helper: fetch all evidence records from DB as list of dicts."""
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT id, timestamp, trace_id, user_name, role, resource, action,
-                       ip_address, user_agent, risk_score, risk_factors,
-                       decision, reason, previous_hash, record_hash
-                FROM evidence_records
-                ORDER BY id ASC
-                """
-            )
-        ).mappings().all()
-    records = []
-    for r in rows:
-        d = dict(r)
-        try:
-            d["risk_factors"] = (
-                json.loads(d["risk_factors"])
-                if isinstance(d["risk_factors"], str)
-                else d["risk_factors"]
-            )
-        except Exception:
-            d["risk_factors"] = []
-        records.append(d)
-    return records
-
-
-@app.get("/forensics/timeline")
-def forensic_timeline(interval: str = "hour"):
-    """Time-series analysis of access decisions grouped by hour or day."""
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY", "timeline": []}
-
-    if interval not in ("hour", "day"):
-        interval = "hour"
-
-    try:
-        records = _fetch_all_records()
-        timeline = group_records_by_period(records, interval=interval)
-        return {"ok": True, "interval": interval, "timeline": timeline}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "timeline": []}
-
-
-@app.get("/forensics/anomalies")
-def forensic_anomalies():
-    """Detect suspicious patterns in the access log."""
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY", "anomalies": []}
-
-    try:
-        records = _fetch_all_records()
-        anomalies = detect_anomalies(records)
-        return {"ok": True, "total": len(anomalies), "anomalies": anomalies}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "anomalies": []}
-
-
-@app.get("/forensics/export-pdf")
-def export_pdf_report():
-    """Generate and download a professional PDF forensic evidence report."""
-    if not DB_READY or engine is None:
-        return {"ok": False, "error": "DB_NOT_READY"}
-
-    try:
-        records = _fetch_all_records()
-        timeline = group_records_by_period(records, interval="hour")
-        anomalies = detect_anomalies(records)
-
-        chain_result = verify_chain(records)
-        chain_ok = chain_result.get("ok", False)
-
-        pdf_bytes = generate_pdf_report(records, timeline, anomalies, chain_ok)
-
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename=forensic_report_{ts}.pdf"
-            },
-        )
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return {
+        "export_timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_records": len(evidence),
+        "chain_stats": chain_stats,
+        "evidence": evidence,
+    }
