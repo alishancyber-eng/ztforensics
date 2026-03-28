@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Evidence Export{% endblock %}
+
+{% block content %}
+<h1>📦 Evidence Export</h1>
+
+<div class="card">
+  <h2>Current Evidence Snapshot</h2>
+  <p style="margin-bottom:1rem;color:#718096">
+    {{ summary.get('total_requests', 0) }} record(s) available for export.
+  </p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+    <div class="card" style="border:1px solid #bee3f8">
+      <h2 style="color:#2a69ac">📁 ZIP Evidence Package</h2>
+      <p style="font-size:.88rem;margin:.5rem 0 1rem;color:#4a5568">
+        Contains <code>evidence_records.json</code>,
+        <code>hash_verification.txt</code>, and
+        <code>forensic_summary.txt</code>. Suitable for incident response teams.
+      </p>
+      <a href="{{ api_public_url }}/forensics/export" target="_blank"
+         style="display:inline-block;background:#2a69ac;color:#fff;padding:.55rem 1.2rem;
+                border-radius:6px;font-weight:600;font-size:.9rem">
+        ⬇ Download ZIP
+      </a>
+    </div>
+
+    <div class="card" style="border:1px solid #c6f6d5">
+      <h2 style="color:#276749">📄 PDF Forensic Report</h2>
+      <p style="font-size:.88rem;margin:.5rem 0 1rem;color:#4a5568">
+        Professional PDF with executive summary, timeline, anomalies, and hash
+        chain proof. Suitable for legal and audit submission.
+      </p>
+      <a href="{{ api_public_url }}/forensics/export-pdf" target="_blank"
+         style="display:inline-block;background:#276749;color:#fff;padding:.55rem 1.2rem;
+                border-radius:6px;font-weight:600;font-size:.9rem">
+        ⬇ Download PDF Report
+      </a>
+    </div>
+
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>Compliance Suitability</h2>
+  <table>
+    <thead><tr><th>Standard</th><th>Feature Used</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>PCI-DSS</td><td>Immutable audit log (hash chain)</td><td><span class="badge badge-green">✓ Covered</span></td></tr>
+      <tr><td>SOC 2</td><td>Cryptographic evidence chain</td><td><span class="badge badge-green">✓ Covered</span></td></tr>
+      <tr><td>HIPAA</td><td>Access decision logging</td><td><span class="badge badge-green">✓ Covered</span></td></tr>
+      <tr><td>GDPR</td><td>Data processing audit trail</td><td><span class="badge badge-green">✓ Covered</span></td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

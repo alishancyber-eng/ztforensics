@@ -1,0 +1,23 @@
+FORENSIC ANALYSIS SUMMARY
+================================================================================
+Report Generated: 2026-03-27T19:53:02.398313
+
+DECISION STATISTICS:
+  Total Requests:     2
+  Allowed:            1 (50%)
+  Denied:             1 (50%)
+  High Risk (≥70):    1
+
+DENIAL REASONS:
+  ALLOWED: 1
+  HIGH_RISK_SCORE: 1
+
+TIMELINE:
+--------------------------------------------------------------------------------
+1. [2026-03-27T19:41:59.551345+00:00] ali → /api/documents (read) = ALLOW (risk: 0)
+2. [2026-03-27T19:41:59.578542+00:00] ali → /api/admin/secrets (delete) = DENY (risk: 100)
+
+FORENSIC INTEGRITY:
+  Hash Chain Status: Valid
+  Records Locked: Yes (cryptographically)
+  Tamper Detection: Enabled

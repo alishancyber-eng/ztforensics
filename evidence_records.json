@@ -1,0 +1,41 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2026-03-27T19:41:59.551345+00:00",
+    "trace_id": "c4258452-e863-4e0e-83d3-21439cba198e",
+    "user_name": "ali",
+    "role": "employee",
+    "resource": "/api/documents",
+    "action": "read",
+    "ip_address": "10.0.0.5",
+    "user_agent": "Mozilla/5.0",
+    "risk_score": 0,
+    "risk_factors": [],
+    "decision": "ALLOW",
+    "reason": "ALLOWED",
+    "previous_hash": "0",
+    "record_hash": "499d6a7aa9ca156beb0d0f6862e504aee5d41d01e018003b94f9122deba1bdaa"
+  },
+  {
+    "id": 2,
+    "timestamp": "2026-03-27T19:41:59.578542+00:00",
+    "trace_id": "b7d892fb-8bcc-4f56-b778-806289c86f65",
+    "user_name": "ali",
+    "role": "employee",
+    "resource": "/api/admin/secrets",
+    "action": "delete",
+    "ip_address": "203.0.113.10",
+    "user_agent": "curl/8.0",
+    "risk_score": 100,
+    "risk_factors": [
+      "foreign_or_untrusted_ip",
+      "non_browser_user_agent",
+      "admin_resource_targeted",
+      "sensitive_action"
+    ],
+    "decision": "DENY",
+    "reason": "HIGH_RISK_SCORE",
+    "previous_hash": "499d6a7aa9ca156beb0d0f6862e504aee5d41d01e018003b94f9122deba1bdaa",
+    "record_hash": "091db917a3b0d8dd6f4bfa4079ec9795ff1ad180d29280c53e95de97edb8da81"
+  }
+]

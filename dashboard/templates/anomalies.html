@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Anomalies{% endblock %}
+
+{% block content %}
+<h1>⚠️ Detected Anomalies</h1>
+
+<div class="card">
+  <p style="margin-bottom:.8rem">
+    <strong>{{ total }}</strong> suspicious pattern(s) detected in the access log.
+  </p>
+
+  {% if anomalies %}
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Subject</th>
+        <th>Count</th>
+        <th>Confidence</th>
+        <th>Severity</th>
+        <th>Last Seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in anomalies %}
+      {% set severity_class = {
+          'HIGH':   'badge-red',
+          'MEDIUM': 'badge-orange',
+          'LOW':    'badge-blue'
+        }.get(a.severity, 'badge-blue') %}
+      <tr>
+        <td><code>{{ a.type }}</code></td>
+        <td>{{ a.get('user') or a.get('ip_address', '—') }}</td>
+        <td>{{ a.count }}</td>
+        <td>{{ "%.0f"|format(a.confidence * 100) }}%</td>
+        <td><span class="badge {{ severity_class }}">{{ a.severity }}</span></td>
+        <td>{{ a.timestamp[:19] if a.timestamp else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#276749">✓ No anomalies detected. Access patterns look normal.</p>
+  {% endif %}
+</div>
+
+<!-- Severity breakdown chart -->
+{% if anomalies %}
+<div class="card mt" style="max-width:400px">
+  <h2>Severity Breakdown</h2>
+  <div class="chart-wrap" style="height:220px">
+    <canvas id="sevChart"></canvas>
+  </div>
+</div>
+<script>
+const severities = {{ anomalies | map(attribute='severity') | list | tojson }};
+const counts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+severities.forEach(s => { if (counts[s] !== undefined) counts[s]++; });
+new Chart(document.getElementById('sevChart'), {
+  type: 'pie',
+  data: {
+    labels: ['HIGH', 'MEDIUM', 'LOW'],
+    datasets: [{ data: [counts.HIGH, counts.MEDIUM, counts.LOW],
+                 backgroundColor: ['#fc8181', '#f6ad55', '#68d391'] }]
+  },
+  options: { responsive: true, maintainAspectRatio: false,
+             plugins: { legend: { position: 'bottom' } } }
+});
+</script>
+{% endif %}
+{% endblock %}

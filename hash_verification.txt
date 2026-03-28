@@ -1,0 +1,25 @@
+FORENSIC EVIDENCE HASH CHAIN VERIFICATION
+================================================================================
+Generated: 2026-03-27T19:53:02.398220
+Total Records: 2
+
+HASH CHAIN INTEGRITY CHECK:
+--------------------------------------------------------------------------------
+Record    1: ✓
+  Hash:         499d6a7aa9ca156beb0d0f6862e504aee5d41d01e018003b94f9122deba1bdaa
+  Previous:     0
+  User:         ali
+  Timestamp:    2026-03-27T19:41:59.551345+00:00
+  Decision:     ALLOW
+
+Record    2: ✓
+  Hash:         091db917a3b0d8dd6f4bfa4079ec9795ff1ad180d29280c53e95de97edb8da81
+  Previous:     499d6a7aa9ca156beb0d0f6862e504aee5d41d01e018003b94f9122deba1bdaa
+  User:         ali
+  Timestamp:    2026-03-27T19:41:59.578542+00:00
+  Decision:     DENY
+
+--------------------------------------------------------------------------------
+✓ CHAIN VALID - No tampering detected
+
+This evidence package can be submitted for audit/legal proceedings.

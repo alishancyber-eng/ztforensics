@@ -1,0 +1,15 @@
+# Development, testing, and attack simulator dependencies
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# API gateway runtime (needed for unit tests that import api_gateway modules)
+fastapi==0.111.0
+pydantic==2.8.2
+pydantic-settings==2.3.4
+requests==2.32.3
+sqlalchemy==2.0.31
+
+# PDF generation (api_gateway/report_generator.py)
+reportlab==4.2.5
