@@ -1,5 +1,5 @@
 """
-Risk factor tests for ZTForensics – 18 tests.
+Risk factor tests for ZTForensics – 28 tests.
 Covers IP reputation, user agent analysis, time-of-day, geolocation,
 action severity, resource sensitivity, brute-force detection, and more.
 """

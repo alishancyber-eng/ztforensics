@@ -136,10 +136,17 @@ class TestTokenRevocationSimulation:
         assert factor == 0.0
 
     def test_opa_deny_triggers_failure_record(self, client):
-        """When OPA denies a request, the failure counter should be incremented."""
-        from risk_scoring import _failure_counts
+        """When OPA denies a request, the failure counter should be incremented
+        (verified by observing a higher risk score on subsequent requests)."""
         uid = "tracked_failure_user_unique"
-        initial = _failure_counts.get(uid, 0)
+        # Make a baseline risk score calculation before any failures
+        from risk_scoring import RiskScorer
+        rs = RiskScorer()
+        baseline = rs.calculate_risk({
+            "ip_address": "8.8.8.8", "user_agent": "Mozilla",
+            "resource": "docs", "action": "READ", "user_id": uid
+        })
+        # Deny through the API, which calls record_failure internally
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"result": {"allow": False, "deny_reason": "High risk"}}
@@ -148,10 +155,16 @@ class TestTokenRevocationSimulation:
         mock_async_client.__aexit__ = AsyncMock(return_value=False)
         mock_async_client.post = AsyncMock(return_value=mock_resp)
         with patch("main.httpx.AsyncClient", return_value=mock_async_client):
-            client.post("/access", json={
+            resp = client.post("/access", json={
                 "user_id": uid, "resource": "admin", "action": "DELETE"
             })
-        assert _failure_counts.get(uid, 0) > initial
+        assert resp.json()["decision"] == "deny"
+        # After a denial, the risk score for that user should be higher
+        after = rs.calculate_risk({
+            "ip_address": "8.8.8.8", "user_agent": "Mozilla",
+            "resource": "docs", "action": "READ", "user_id": uid
+        })
+        assert after > baseline
 
 
 # ---------------------------------------------------------------------------

@@ -171,7 +171,7 @@ class TestResourceClassification:
 class TestMultipleRuleCombinations:
     def test_all_risk_factors_stacked_capped_at_one(self):
         """Maximum risk from all factors combined must stay ≤ 1.0."""
-        from risk_scoring import RiskScorer, _failure_counts
+        from risk_scoring import RiskScorer
         rs = RiskScorer()
         uid = "_max_risk_policy_user"
         for _ in range(5):
