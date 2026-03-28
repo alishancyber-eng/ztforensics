@@ -3,7 +3,7 @@ Risk scoring module for ZTForensics API Gateway.
 Evaluates the risk level of an access request based on multiple factors.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class RiskScorer:
         return 0.0
 
     def _time_of_day_risk(self) -> float:
-        hour = datetime.utcnow().hour
+        hour = datetime.now(timezone.utc).hour
         if 0 <= hour < 6:
             return 0.2
         return 0.0

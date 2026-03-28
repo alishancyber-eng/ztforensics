@@ -5,7 +5,7 @@ Provides a tamper-evident, in-memory hash chain for access log entries.
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class BlockchainManager:
         """Add the immutable genesis block to the chain."""
         genesis: dict[str, Any] = {
             "index": 0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": {"genesis": True},
             "previous_hash": "0" * 64,
         }
@@ -63,7 +63,7 @@ class BlockchainManager:
         previous_block = self._chain[-1]
         new_block: dict[str, Any] = {
             "index": len(self._chain),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": log_entry,
             "previous_hash": previous_block["hash"],
         }

@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
@@ -192,7 +192,7 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
         "risk_score": risk_score,
         "ip_address": request.ip_address,
         "user_agent": request.user_agent,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     chain_hash = blockchain_manager.add_block(log_entry)
 
@@ -296,7 +296,7 @@ async def forensics_export(db: Session = Depends(get_db)) -> dict[str, Any]:
     ]
 
     return {
-        "export_timestamp": datetime.utcnow().isoformat(),
+        "export_timestamp": datetime.now(timezone.utc).isoformat(),
         "total_records": len(evidence),
         "chain_stats": chain_stats,
         "evidence": evidence,
