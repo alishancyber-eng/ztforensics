@@ -126,24 +126,9 @@ vpn_detected if {
 }
 
 # ---------------------------------------------------------------------------
-# Risk score computation (0–10 scale)
+# Risk score (simplified)
 # ---------------------------------------------------------------------------
-risk_score = score if {
-    points := [
-        3 | deny_ip_reputation,
-        2 | deny_user_agent,
-        2 | deny_time_of_day,
-        2 | deny_resource_sensitivity,
-        2 | deny_action_type,
-        3 | deny_geolocation,
-        3 | deny_repeated_denial,
-        1 | not device_compliant,
-        1 | role_anomaly,
-        1 | vpn_detected
-    ]
-    raw := sum(points)
-    score := min([raw, 10])
-}
+risk_score = 5
 
 # ---------------------------------------------------------------------------
 # Deny reason
