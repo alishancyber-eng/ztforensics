@@ -132,23 +132,16 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ----------------------------------------------------------
+    # ----------------------------------------------------------
   # Open Policy Agent
   # ----------------------------------------------------------
   ztf-opa:
     image: openpolicyagent/opa:0.68.0
     container_name: ztf-opa
     restart: unless-stopped
-    command: run --server /policies/opa_policies.rego
-    volumes:
-      - ./opa/policies:/policies:ro
+    command: run --server
     ports:
       - "8181:8181"
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8181/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
     networks:
       - ztf-net
     logging:
