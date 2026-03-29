@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}ZTForensics — Configuration{% endblock %}
+
+{% block content %}
+<h1>⚙️ Environment Configuration</h1>
+
+<div class="card">
+  <h2>Access Token</h2>
+  <p style="font-size:.9rem;color:#4a5568;margin-bottom:.6rem;">
+    This page reads <code>/config/current</code> (auth-protected). Provide a valid Bearer token.
+  </p>
+  <input id="cfgTokenInput" type="text" placeholder="Paste Bearer token"
+         value="{{ access_token }}"
+         style="width:100%;padding:.55rem;border:1px solid #cbd5e0;border-radius:6px;" />
+  <div style="margin-top:.6rem;">
+    <button onclick="saveCfgToken()" style="padding:.45rem .8rem;">Save Token</button>
+    <button onclick="reloadWithToken()" style="padding:.45rem .8rem;margin-left:.4rem;">Reload Config</button>
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>Current Config</h2>
+  {% if config_data.get('auth_required') %}
+    <p style="color:#c53030;">Authentication required to view config.</p>
+  {% elif config_data.get('ok') is sameas false and config_data.get('error') %}
+    <p style="color:#c53030;">Error: {{ config_data.get('error') }}</p>
+  {% else %}
+    <table>
+      <tbody>
+        <tr><td><strong>Environment</strong></td><td>{{ config_data.get('environment', '—') }}</td></tr>
+        <tr><td><strong>Organization</strong></td><td>{{ config_data.get('organization', '—') }}</td></tr>
+        <tr><td><strong>Sector</strong></td><td>{{ config_data.get('sector', '—') }}</td></tr>
+        <tr><td><strong>Audit Retention</strong></td><td>{{ config_data.get('audit_retention_days', '—') }} days</td></tr>
+        <tr><td><strong>HIPAA</strong></td><td>{{ config_data.get('hipaa_compliant', '—') }}</td></tr>
+        <tr><td><strong>PCI</strong></td><td>{{ config_data.get('pci_compliant', '—') }}</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin-top:1rem;">Thresholds</h2>
+    <table>
+      <tbody>
+        <tr><td>Low</td><td>{{ config_data.get('thresholds', {}).get('low', '—') }}</td></tr>
+        <tr><td>Medium</td><td>{{ config_data.get('thresholds', {}).get('medium', '—') }}</td></tr>
+        <tr><td>High</td><td>{{ config_data.get('thresholds', {}).get('high', '—') }}</td></tr>
+        <tr><td>Critical</td><td>{{ config_data.get('thresholds', {}).get('critical', '—') }}</td></tr>
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+<script>
+function saveCfgToken() {
+  const token = document.getElementById('cfgTokenInput').value.trim();
+  localStorage.setItem('ztf_admin_token', token);
+  alert('Token saved.');
+}
+function reloadWithToken() {
+  const token = document.getElementById('cfgTokenInput').value.trim();
+  const url = new URL(window.location.href);
+  if (token) {
+    url.searchParams.set('access_token', token);
+  } else {
+    url.searchParams.delete('access_token');
+  }
+  window.location.href = url.toString();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('ztf_admin_token');
+  const el = document.getElementById('cfgTokenInput');
+  if (saved && !el.value) el.value = saved;
+});
+</script>
+{% endblock %}

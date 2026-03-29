@@ -5,40 +5,83 @@ Runs on port 5000 and fetches data from the FastAPI Gateway (port 8000).
 """
 
 import os
+from typing import Any
 
 import requests
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
 # Internal Docker network URL for the FastAPI service
-API_BASE = os.environ.get("API_BASE_URL", "http://api-gateway:8000")
+API_BASE = os.environ.get("API_BASE_URL", "http://ztf-api:8000")
 # Public URL used in browser-facing links (e.g. download buttons)
 API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", "http://localhost:8000")
 
 
-def _api_get(path: str, params: dict = None) -> dict:
-    """Safe wrapper around requests.get with a timeout and error handling."""
+def _extract_bearer_token() -> str | None:
+    """
+    Extract bearer token from:
+    1) Authorization header (Bearer ...)
+    2) X-Access-Token header
+    3) access_token query param
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+
+    x_token = request.headers.get("X-Access-Token", "").strip()
+    if x_token:
+        return x_token
+
+    q_token = request.args.get("access_token", "").strip()
+    if q_token:
+        return q_token
+
+    return None
+
+
+def _api_get(path: str, params: dict | None = None, auth_required: bool = False) -> dict[str, Any]:
+    """Safe wrapper around requests.get with timeout and optional auth forwarding."""
     try:
-        resp = requests.get(f"{API_BASE}{path}", params=params, timeout=5)
+        headers: dict[str, str] = {}
+        token = _extract_bearer_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        resp = requests.get(
+            f"{API_BASE}{path}",
+            params=params,
+            headers=headers,
+            timeout=8,
+        )
+
+        if auth_required and resp.status_code in (401, 403):
+            return {
+                "ok": False,
+                "auth_required": True,
+                "status_code": resp.status_code,
+                "error": "Authentication required or insufficient role for this endpoint.",
+            }
+
         resp.raise_for_status()
         return resp.json()
+
     except requests.RequestException as exc:
         return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/stats")
+def api_stats():
+    """Frontend polling endpoint used by dashboard auto-refresh."""
+    data = _api_get("/forensics/summary-public")
+    return jsonify(data)
 
 
 @app.route("/")
 @app.route("/dashboard")
 def index():
-    summary = _api_get("/forensics/summary-public")  
-    chain = _api_get("/forensics/verify-chain")
-    timeline = _api_get("/forensics/timeline", params={"interval": "hour"})
-    return render_template(
-        "index.html",
-        summary=summary,
-        chain=chain,
-        timeline=timeline.get("timeline", []),
-    )
+    summary = _api_get("/forensics/summary-public")
+    return render_template("index.html", summary=summary)
 
 
 @app.route("/dashboard/timeline")
@@ -64,31 +107,53 @@ def anomalies_page():
 
 @app.route("/dashboard/verify")
 def verify_page():
-    chain = _api_get("/forensics/verify-chain")
-    return render_template("verify.html", chain=chain)
+    chain = _api_get("/forensics/verify-chain", auth_required=True)
+    return render_template("verify.html", chain=chain, api_public_url=API_PUBLIC_URL)
 
 
 @app.route("/dashboard/evidence")
 def evidence_page():
-    summary = _api_get("/forensics/summary-public")  # ← CHANGED from /forensics/summary
-    return render_template("evidence.html", summary=summary, api_public_url=API_PUBLIC_URL)
+    summary = _api_get("/forensics/summary-public")
+    token = _extract_bearer_token()
+    return render_template(
+        "evidence.html",
+        summary=summary,
+        api_public_url=API_PUBLIC_URL,
+        access_token=token or "",
+    )
 
 
 @app.route("/admin")
 def admin_panel():
-    """Admin control panel for managing users, policies, locations, devices"""
-    return render_template("admin.html")
+    """Admin control panel."""
+    token = _extract_bearer_token()
+    status = _api_get("/admin/status", auth_required=True)
+    return render_template(
+        "admin.html",
+        api_public_url=API_PUBLIC_URL,
+        admin_status=status,
+        access_token=token or "",
+    )
+
+
+@app.route("/dashboard/config")
+def config_page():
+    cfg = _api_get("/config/current", auth_required=True)
+    return render_template(
+        "config.html",
+        config_data=cfg,
+        api_public_url=API_PUBLIC_URL,
+        access_token=_extract_bearer_token() or "",
+    )
 
 
 @app.route("/demo")
 def demo_page():
-    """Live demo showing access control scenarios"""
     return render_template("demo.html")
 
 
 @app.route("/health")
 def health_check():
-    """Health check endpoint"""
     return {"status": "ok", "service": "dashboard"}
 
 

@@ -1,28 +1,42 @@
 """
 ZTForensics API Gateway – main FastAPI application.
 """
+import io
 import json
 import logging
 import os
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
 from auth_middleware import get_current_user
 from auth_routes import router as auth_router
 from blockchain import BlockchainManager
-from database import AccessLog, get_db, init_db
+from config_manager import config_manager
+from database import (
+    AccessLog,
+    AdminAuditLog,
+    AdminPolicy,
+    AdminUser,
+    WhitelistDevice,
+    WhitelistLocation,
+    get_db,
+    init_db,
+)
 from risk_scoring import RiskScorer
 from schemas import UserContext
 from storage import StorageManager
-from config_manager import config_manager
 
 load_dotenv()
 
@@ -83,7 +97,6 @@ app.include_router(auth_router)
 
 class AccessRequest(BaseModel):
     """Incoming access-control request payload."""
-
     user_id: str = Field(..., min_length=1)
     resource: str = Field(..., min_length=1)
     action: str = Field(..., min_length=1)
@@ -94,11 +107,33 @@ class AccessRequest(BaseModel):
 
 class AccessResponse(BaseModel):
     """Response returned after an access-control decision."""
-
     decision: str
     risk_score: float
     reason: str
     chain_hash: str
+
+
+class AdminUserCreate(BaseModel):
+    username: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=3)
+    role: str = Field(..., min_length=1)
+
+
+class AdminPolicyCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    risk_threshold: int = Field(..., ge=0, le=100)
+    action: str = Field(..., min_length=1)
+
+
+class AdminWhitelistLocationCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    ip_range: str = Field(..., min_length=3)
+    location: str = Field(..., min_length=1)
+
+
+class AdminWhitelistDeviceCreate(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    device_name: str = Field(..., min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -106,10 +141,7 @@ class AccessResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 async def _query_opa(request: AccessRequest) -> dict[str, Any]:
-    """Send the request to OPA and return the parsed decision.
-
-    Falls back to *allow* when OPA is unreachable.
-    """
+    """Send the request to OPA and return the parsed decision."""
     payload = {
         "input": {
             "user_id": request.user_id,
@@ -122,10 +154,7 @@ async def _query_opa(request: AccessRequest) -> dict[str, Any]:
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                f"{OPA_URL}/v1/data/ztf/authz",
-                json=payload,
-            )
+            resp = await client.post(f"{OPA_URL}/v1/data/ztf/authz", json=payload)
             resp.raise_for_status()
             result = resp.json().get("result", {})
             return result
@@ -134,19 +163,41 @@ async def _query_opa(request: AccessRequest) -> dict[str, Any]:
         return {"allow": True}
 
 
+def _require_admin(user: UserContext) -> None:
+    roles = [r.lower() for r in (user.roles or [])]
+    role = (user.role or "").lower()
+    if "admin" not in roles and role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+
+def _admin_audit(
+    db: Session,
+    actor_user_id: str,
+    action: str,
+    target_type: str,
+    target_id: str | None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    row = AdminAuditLog(
+        actor_user_id=actor_user_id,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        details_json=json.dumps(details or {}),
+    )
+    db.add(row)
+    db.commit()
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.get("/")
 async def root() -> dict[str, str]:
-    """Root endpoint – service identification."""
     return {"message": "ZTForensics API Gateway", "version": "1.0.0"}
 
 
 @app.get("/health")
 async def health(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Health-check endpoint."""
     db_status = "up"
     try:
         db.execute(__import__("sqlalchemy").text("SELECT 1"))
@@ -165,10 +216,40 @@ async def health(db: Session = Depends(get_db)) -> dict[str, Any]:
     }
 
 
+@app.get("/forensics/summary-public")
+async def forensics_summary_public(db: Session = Depends(get_db)) -> dict[str, Any]:
+    from sqlalchemy import func
+
+    total = db.query(func.count(AccessLog.id)).scalar() or 0
+    allowed = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "allow").scalar() or 0
+    denied = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "deny").scalar() or 0
+    high_risk = db.query(func.count(AccessLog.id)).filter(AccessLog.risk_score >= 0.75).scalar() or 0
+
+    recent_logs = db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(10).all()
+    recent = [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "user_id": log.user_id,
+            "resource": log.resource,
+            "action": log.action,
+            "decision": log.decision,
+            "risk_score": log.risk_score,
+        }
+        for log in recent_logs
+    ]
+
+    return {
+        "total_requests": total,
+        "allowed": allowed,
+        "denied": denied,
+        "high_risk_events": high_risk,
+        "recent_logs": recent,
+    }
+
+
 @app.post("/access", response_model=AccessResponse)
 async def access(request: AccessRequest, db: Session = Depends(get_db)) -> AccessResponse:
-    """Evaluate an access request through OPA and log the decision."""
-    # 1. Calculate risk score
     risk_score = risk_scorer.calculate_risk(
         {
             "ip_address": request.ip_address,
@@ -179,7 +260,6 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
         }
     )
 
-    # 2. Query OPA
     opa_result = await _query_opa(request)
     allowed: bool = bool(opa_result.get("allow", True))
 
@@ -189,7 +269,6 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
     decision = "allow" if allowed else "deny"
     reason = opa_result.get("deny_reason", "Policy decision") if not allowed else "Access granted"
 
-    # 3. Build chain entry
     log_entry = {
         "user_id": request.user_id,
         "resource": request.resource,
@@ -202,7 +281,6 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
     }
     chain_hash = blockchain_manager.add_block(log_entry)
 
-    # 4. Persist to database
     access_log = AccessLog(
         user_id=request.user_id,
         resource=request.resource,
@@ -218,11 +296,7 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
 
     logger.info(
         "Access %s: user=%s resource=%s action=%s risk=%.2f",
-        decision,
-        request.user_id,
-        request.resource,
-        request.action,
-        risk_score,
+        decision, request.user_id, request.resource, request.action, risk_score
     )
 
     return AccessResponse(
@@ -234,10 +308,7 @@ async def access(request: AccessRequest, db: Session = Depends(get_db)) -> Acces
 
 
 @app.get("/forensics/verify-chain")
-async def verify_chain(
-    _user: UserContext = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Verify the integrity of the forensic blockchain."""
+async def verify_chain(_user: UserContext = Depends(get_current_user)) -> dict[str, Any]:
     result = blockchain_manager.verify_chain()
     stats = blockchain_manager.get_chain_stats()
     return {**result, **stats}
@@ -248,20 +319,14 @@ async def forensics_summary(
     db: Session = Depends(get_db),
     _user: UserContext = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Return aggregate statistics from the access log database."""
     from sqlalchemy import func
 
     total = db.query(func.count(AccessLog.id)).scalar() or 0
     allowed = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "allow").scalar() or 0
     denied = db.query(func.count(AccessLog.id)).filter(AccessLog.decision == "deny").scalar() or 0
-    high_risk = (
-        db.query(func.count(AccessLog.id)).filter(AccessLog.risk_score >= 0.75).scalar() or 0
-    )
+    high_risk = db.query(func.count(AccessLog.id)).filter(AccessLog.risk_score >= 0.75).scalar() or 0
 
-    recent_logs = (
-        db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(10).all()
-    )
-
+    recent_logs = db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(10).all()
     recent = [
         {
             "id": log.id,
@@ -289,7 +354,6 @@ async def forensics_export(
     db: Session = Depends(get_db),
     _user: UserContext = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Export all forensic evidence as a JSON structure."""
     logs = db.query(AccessLog).order_by(AccessLog.timestamp.asc()).all()
     chain_stats = blockchain_manager.get_chain_stats()
 
@@ -317,24 +381,377 @@ async def forensics_export(
     }
 
 
+@app.get("/forensics/export-pdf")
+async def forensics_export_pdf(
+    db: Session = Depends(get_db),
+    _user: UserContext = Depends(get_current_user),
+):
+    logs = db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(20).all()
+    summary = await forensics_summary(db=db, _user=_user)
+
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 40
+
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(40, y, "ZTForensics - Forensic Report")
+    y -= 24
+
+    p.setFont("Helvetica", 10)
+    p.drawString(40, y, f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    y -= 20
+
+    p.drawString(40, y, f"Total Requests: {summary.get('total_requests', 0)}")
+    y -= 14
+    p.drawString(40, y, f"Allowed: {summary.get('allowed', 0)}")
+    y -= 14
+    p.drawString(40, y, f"Denied: {summary.get('denied', 0)}")
+    y -= 14
+    p.drawString(40, y, f"High Risk Events: {summary.get('high_risk_events', 0)}")
+    y -= 24
+
+    p.setFont("Helvetica-Bold", 11)
+    p.drawString(40, y, "Recent Records:")
+    y -= 16
+
+    p.setFont("Helvetica", 9)
+    for log in logs:
+        line = f"{log.timestamp} | {log.user_id} | {log.resource} | {log.action} | {log.decision} | {log.risk_score:.2f}"
+        p.drawString(40, y, line[:120])
+        y -= 12
+        if y < 50:
+            p.showPage()
+            y = height - 40
+            p.setFont("Helvetica", 9)
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=ztforensics-report.pdf"},
+    )
+
+
+@app.get("/forensics/timeline")
+async def forensics_timeline(
+    interval: str = Query("hour", pattern="^(hour|day)$"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    logs = db.query(AccessLog).order_by(AccessLog.timestamp.asc()).all()
+    buckets: dict[str, dict[str, Any]] = defaultdict(lambda: {
+        "period": "",
+        "total_requests": 0,
+        "allowed": 0,
+        "denied": 0,
+        "risk_sum": 0.0,
+        "high_risk_events": 0,
+    })
+
+    for log in logs:
+        if not log.timestamp:
+            continue
+        key = log.timestamp.strftime("%Y-%m-%d %H:00") if interval == "hour" else log.timestamp.strftime("%Y-%m-%d")
+        b = buckets[key]
+        b["period"] = key
+        b["total_requests"] += 1
+        if (log.decision or "").lower() == "allow":
+            b["allowed"] += 1
+        else:
+            b["denied"] += 1
+        b["risk_sum"] += float(log.risk_score or 0.0)
+        if float(log.risk_score or 0.0) >= 0.75:
+            b["high_risk_events"] += 1
+
+    timeline = []
+    for k in sorted(buckets.keys()):
+        b = buckets[k]
+        total = b["total_requests"] or 1
+        timeline.append({
+            "period": b["period"],
+            "total_requests": b["total_requests"],
+            "allowed": b["allowed"],
+            "denied": b["denied"],
+            "avg_risk_score": round(b["risk_sum"] / total, 4),
+            "high_risk_events": b["high_risk_events"],
+        })
+
+    return {"interval": interval, "timeline": timeline}
+
+
+@app.get("/forensics/anomalies")
+async def forensics_anomalies(db: Session = Depends(get_db)) -> dict[str, Any]:
+    logs = db.query(AccessLog).order_by(AccessLog.timestamp.desc()).limit(500).all()
+    anomalies: list[dict[str, Any]] = []
+
+    by_user_denies: dict[str, int] = defaultdict(int)
+    by_ip_count: dict[str, int] = defaultdict(int)
+
+    for log in logs:
+        if (log.decision or "").lower() == "deny":
+            by_user_denies[log.user_id] += 1
+        if log.ip_address:
+            by_ip_count[log.ip_address] += 1
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    for user_id, count in by_user_denies.items():
+        if count >= 3:
+            anomalies.append({
+                "type": "repeated_denials",
+                "user": user_id,
+                "count": count,
+                "confidence": min(1.0, 0.4 + count * 0.1),
+                "severity": "HIGH" if count >= 6 else "MEDIUM",
+                "timestamp": now,
+            })
+
+    for ip, count in by_ip_count.items():
+        if count >= 20:
+            anomalies.append({
+                "type": "high_activity_ip",
+                "ip_address": ip,
+                "count": count,
+                "confidence": min(1.0, 0.3 + count * 0.02),
+                "severity": "MEDIUM" if count < 40 else "HIGH",
+                "timestamp": now,
+            })
+
+    return {"total": len(anomalies), "anomalies": anomalies}
+
 
 @app.get("/config/current")
-async def get_current_config(
-    _user: UserContext = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Get current environment configuration"""
+async def get_current_config(_user: UserContext = Depends(get_current_user)) -> dict[str, Any]:
     return {
         "environment": config_manager.current_env,
         "organization": config_manager.get_organization_name(),
         "sector": config_manager.get_sector(),
         "risk_factors": config_manager.get_risk_factors(),
         "thresholds": {
-            "low": config_manager.get_risk_threshold('low'),
-            "medium": config_manager.get_risk_threshold('medium'),
-            "high": config_manager.get_risk_threshold('high'),
-            "critical": config_manager.get_risk_threshold('critical')
+            "low": config_manager.get_risk_threshold("low"),
+            "medium": config_manager.get_risk_threshold("medium"),
+            "high": config_manager.get_risk_threshold("high"),
+            "critical": config_manager.get_risk_threshold("critical"),
         },
         "audit_retention_days": config_manager.get_audit_retention_days(),
         "hipaa_compliant": config_manager.is_hipaa_compliant(),
-        "pci_compliant": config_manager.is_pci_compliant()
+        "pci_compliant": config_manager.is_pci_compliant(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints (auth protected, admin role required) - DB backed
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/status")
+async def admin_status(
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+    return {
+        "users_count": db.query(AdminUser).count(),
+        "policies_count": db.query(AdminPolicy).count(),
+        "whitelist_locations_count": db.query(WhitelistLocation).count(),
+        "whitelist_devices_count": db.query(WhitelistDevice).count(),
+        "audit_events_count": db.query(AdminAuditLog).count(),
+        "note": "Persistent PostgreSQL-backed admin store enabled.",
+    }
+
+
+@app.post("/admin/users")
+async def admin_create_user(
+    payload: AdminUserCreate,
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+
+    exists = db.query(AdminUser).filter(AdminUser.username == payload.username).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="User already exists")
+
+    row = AdminUser(
+        username=payload.username,
+        email=payload.email,
+        role=payload.role.upper(),
+        is_active=True,
+        created_by=user.user_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    _admin_audit(
+        db=db,
+        actor_user_id=user.user_id,
+        action="CREATE_USER",
+        target_type="admin_user",
+        target_id=str(row.id),
+        details={"username": row.username, "role": row.role},
+    )
+
+    return {
+        "ok": True,
+        "user": {
+            "id": row.id,
+            "username": row.username,
+            "email": row.email,
+            "role": row.role,
+            "is_active": row.is_active,
+            "created_at": row.created_at.isoformat(),
+            "created_by": row.created_by,
+        },
+    }
+
+
+@app.post("/admin/policies")
+async def admin_create_policy(
+    payload: AdminPolicyCreate,
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+
+    row = AdminPolicy(
+        name=payload.name,
+        risk_threshold=payload.risk_threshold,
+        action=payload.action.upper(),
+        is_active=True,
+        created_by=user.user_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    _admin_audit(
+        db=db,
+        actor_user_id=user.user_id,
+        action="CREATE_POLICY",
+        target_type="admin_policy",
+        target_id=str(row.id),
+        details={"name": row.name, "risk_threshold": row.risk_threshold, "action": row.action},
+    )
+
+    return {
+        "ok": True,
+        "policy": {
+            "id": row.id,
+            "name": row.name,
+            "risk_threshold": row.risk_threshold,
+            "action": row.action,
+            "is_active": row.is_active,
+            "created_at": row.created_at.isoformat(),
+            "created_by": row.created_by,
+        },
+    }
+
+
+@app.post("/admin/whitelist/location")
+async def admin_whitelist_location(
+    payload: AdminWhitelistLocationCreate,
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+
+    row = WhitelistLocation(
+        name=payload.name,
+        ip_range=payload.ip_range,
+        location=payload.location,
+        is_active=True,
+        created_by=user.user_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    _admin_audit(
+        db=db,
+        actor_user_id=user.user_id,
+        action="CREATE_WHITELIST_LOCATION",
+        target_type="whitelist_location",
+        target_id=str(row.id),
+        details={"name": row.name, "ip_range": row.ip_range, "location": row.location},
+    )
+
+    return {
+        "ok": True,
+        "location": {
+            "id": row.id,
+            "name": row.name,
+            "ip_range": row.ip_range,
+            "location": row.location,
+            "is_active": row.is_active,
+            "created_at": row.created_at.isoformat(),
+            "created_by": row.created_by,
+        },
+    }
+
+
+@app.post("/admin/whitelist/device")
+async def admin_whitelist_device(
+    payload: AdminWhitelistDeviceCreate,
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+
+    row = WhitelistDevice(
+        user_id=payload.user_id,
+        device_name=payload.device_name,
+        is_active=True,
+        created_by=user.user_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    _admin_audit(
+        db=db,
+        actor_user_id=user.user_id,
+        action="CREATE_WHITELIST_DEVICE",
+        target_type="whitelist_device",
+        target_id=str(row.id),
+        details={"user_id": row.user_id, "device_name": row.device_name},
+    )
+
+    return {
+        "ok": True,
+        "device": {
+            "id": row.id,
+            "user_id": row.user_id,
+            "device_name": row.device_name,
+            "is_active": row.is_active,
+            "created_at": row.created_at.isoformat(),
+            "created_by": row.created_by,
+        },
+    }
+
+
+@app.get("/admin/audit")
+async def admin_audit_list(
+    limit: int = Query(50, ge=1, le=500),
+    user: UserContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin(user)
+    rows = db.query(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(limit).all()
+    return {
+        "total": len(rows),
+        "events": [
+            {
+                "id": r.id,
+                "actor_user_id": r.actor_user_id,
+                "action": r.action,
+                "target_type": r.target_type,
+                "target_id": r.target_id,
+                "details_json": r.details_json,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
     }

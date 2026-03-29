@@ -1,224 +1,172 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ZTForensics Dashboard</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <style>
-    body { background-color: #0d1117; color: #c9d1d9; }
-    .navbar-brand { font-weight: 700; letter-spacing: 1px; }
-    .stat-card { border: 1px solid #30363d; border-radius: 8px; background: #161b22; }
-    .stat-value { font-size: 2rem; font-weight: 700; }
-    .table-dark thead th { background: #161b22; }
-    #countdown { font-size: 0.8rem; color: #8b949e; }
-  </style>
-</head>
-<body>
-  <!-- Navbar -->
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="/">🔒 ZTForensics</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navMenu">
-        <ul class="navbar-nav me-auto">
-          <li class="nav-item"><a class="nav-link active" href="/">Home</a></li>
-          <li class="nav-item"><a class="nav-link" href="#timeline">Timeline</a></li>
-          <li class="nav-item"><a class="nav-link" href="#anomalies">Anomalies</a></li>
-          <li class="nav-item"><a class="nav-link" href="#verification">Verification</a></li>
-          <li class="nav-item"><a class="nav-link" href="#evidence">Evidence</a></li>
-        </ul>
-        <span id="countdown" class="navbar-text">Next refresh in <span id="timer">30</span>s</span>
-      </div>
-    </div>
-  </nav>
+{% extends "base.html" %}
+{% block title %}ZTForensics — Dashboard{% endblock %}
+{% block refresh_text %}Auto refresh in <span id="timer">30</span>s <button id="toggleRefresh" style="margin-left:.5rem;padding:.15rem .5rem;border:0;border-radius:4px;cursor:pointer;">Pause</button>{% endblock %}
 
-  <div class="container-fluid py-4">
-    <!-- Stats cards -->
-    <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3">
-        <div class="stat-card p-3 text-center">
-          <div class="text-secondary small">Total Requests</div>
-          <div class="stat-value text-info" id="totalRequests">—</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card p-3 text-center">
-          <div class="text-secondary small">Allowed</div>
-          <div class="stat-value text-success" id="allowed">—</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card p-3 text-center">
-          <div class="text-secondary small">Denied</div>
-          <div class="stat-value text-danger" id="denied">—</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card p-3 text-center">
-          <div class="text-secondary small">High Risk Events</div>
-          <div class="stat-value text-warning" id="highRisk">—</div>
-        </div>
-      </div>
-    </div>
+{% block content %}
+<h1>📊 Security Operations Dashboard</h1>
 
-    <!-- Charts -->
-    <div class="row g-3 mb-4">
-      <div class="col-md-4">
-        <div class="stat-card p-3 h-100">
-          <h6 class="text-secondary mb-3">Allow / Deny Distribution</h6>
-          <canvas id="pieChart" height="200"></canvas>
-        </div>
-      </div>
-      <div class="col-md-8">
-        <div class="stat-card p-3 h-100" id="timeline">
-          <h6 class="text-secondary mb-3">Access Timeline</h6>
-          <canvas id="lineChart" height="100"></canvas>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent logs table -->
-    <div class="stat-card p-3" id="anomalies">
-      <h6 class="text-secondary mb-3">Recent Access Logs</h6>
-      <div class="table-responsive">
-        <table class="table table-dark table-hover table-sm mb-0">
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>User</th>
-              <th>Resource</th>
-              <th>Action</th>
-              <th>Decision</th>
-              <th>Risk Score</th>
-            </tr>
-          </thead>
-          <tbody id="logsBody">
-            <tr><td colspan="6" class="text-center text-secondary">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+<div class="card-grid">
+  <div class="card" style="text-align:center;">
+    <div style="font-size:.85rem;color:#718096;">Total Requests</div>
+    <div id="totalRequests" style="font-size:2rem;font-weight:700;color:#2b6cb0;">—</div>
   </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:.85rem;color:#718096;">Allowed</div>
+    <div id="allowed" style="font-size:2rem;font-weight:700;color:#2f855a;">—</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:.85rem;color:#718096;">Denied</div>
+    <div id="denied" style="font-size:2rem;font-weight:700;color:#c53030;">—</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:.85rem;color:#718096;">High Risk Events</div>
+    <div id="highRisk" style="font-size:2rem;font-weight:700;color:#b7791f;">—</div>
+  </div>
+</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    let pieChart, lineChart;
+<div class="card mt" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+  <div>
+    <h2>Allow / Deny Distribution</h2>
+    <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+  </div>
+  <div>
+    <h2>Access Timeline (Recent Risk Scores)</h2>
+    <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+  </div>
+</div>
 
-    async function fetchStats() {
-      try {
-        const res = await fetch('/api/stats');
-        if (!res.ok) throw new Error('API error');
-        const data = await res.json();
-        updateCards(data);
-        updateCharts(data);
-        updateTable(data.recent_logs || []);
-      } catch (e) {
-        console.error('Failed to fetch stats:', e);
-      }
+<div class="card mt">
+  <h2>Recent Access Logs</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>User</th>
+        <th>Resource</th>
+        <th>Action</th>
+        <th>Decision</th>
+        <th>Risk Score</th>
+      </tr>
+    </thead>
+    <tbody id="logsBody">
+      <tr><td colspan="6" style="text-align:center;color:#718096;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+let pieChart, lineChart;
+let countdown = 30;
+let refreshPaused = false;
+
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+
+    document.getElementById('totalRequests').textContent = data.total_requests ?? '—';
+    document.getElementById('allowed').textContent = data.allowed ?? '—';
+    document.getElementById('denied').textContent = data.denied ?? '—';
+    document.getElementById('highRisk').textContent = data.high_risk_events ?? '—';
+
+    const allowed = data.allowed ?? 0;
+    const denied  = data.denied ?? 0;
+
+    if (pieChart) {
+      pieChart.data.datasets[0].data = [allowed, denied];
+      pieChart.update();
+    } else {
+      pieChart = new Chart(document.getElementById('pieChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Allowed', 'Denied'],
+          datasets: [{ data: [allowed, denied], backgroundColor: ['#38a169', '#e53e3e'] }]
+        }
+      });
     }
 
-    function updateCards(data) {
-      document.getElementById('totalRequests').textContent = data.total_requests ?? '—';
-      document.getElementById('allowed').textContent       = data.allowed ?? '—';
-      document.getElementById('denied').textContent        = data.denied ?? '—';
-      document.getElementById('highRisk').textContent      = data.high_risk_events ?? '—';
+    const logs = (data.recent_logs || []).slice().reverse();
+    const labels = logs.map(l => l.timestamp ? l.timestamp.substring(11,19) : '');
+    const scores = logs.map(l => l.risk_score ?? 0);
+
+    if (lineChart) {
+      lineChart.data.labels = labels;
+      lineChart.data.datasets[0].data = scores;
+      lineChart.update();
+    } else {
+      lineChart = new Chart(document.getElementById('lineChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Risk Score',
+            data: scores,
+            borderColor: '#3182ce',
+            backgroundColor: 'rgba(49,130,206,0.12)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: { scales: { y: { min: 0, max: 1 } } }
+      });
     }
 
-    function updateCharts(data) {
-      const allowed = data.allowed ?? 0;
-      const denied  = data.denied ?? 0;
+    updateTable(data.recent_logs || []);
+  } catch (e) {
+    console.error('Failed to fetch stats:', e);
+  }
+}
 
-      // Pie chart
-      if (pieChart) {
-        pieChart.data.datasets[0].data = [allowed, denied];
-        pieChart.update();
-      } else {
-        const ctx = document.getElementById('pieChart').getContext('2d');
-        pieChart = new Chart(ctx, {
-          type: 'doughnut',
-          data: {
-            labels: ['Allowed', 'Denied'],
-            datasets: [{ data: [allowed, denied], backgroundColor: ['#238636', '#da3633'] }]
-          },
-          options: { plugins: { legend: { labels: { color: '#c9d1d9' } } } }
-        });
-      }
+function riskBadge(score) {
+  if (score >= 0.75) return `<span class="badge badge-red">${score.toFixed(2)}</span>`;
+  if (score >= 0.50) return `<span class="badge badge-orange">${score.toFixed(2)}</span>`;
+  if (score >= 0.25) return `<span class="badge badge-blue">${score.toFixed(2)}</span>`;
+  return `<span class="badge badge-green">${score.toFixed(2)}</span>`;
+}
 
-      // Line chart (recent logs over time)
-      const logs = (data.recent_logs || []).slice().reverse();
-      const labels = logs.map(l => l.timestamp ? l.timestamp.substring(11,19) : '');
-      const scores = logs.map(l => l.risk_score ?? 0);
+function updateTable(logs) {
+  const tbody = document.getElementById('logsBody');
+  if (!logs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718096;">No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = logs.map(l => `
+    <tr>
+      <td>${l.timestamp ? l.timestamp.substring(0,19).replace('T',' ') : '—'}</td>
+      <td>${l.user_id ?? '—'}</td>
+      <td>${l.resource ?? '—'}</td>
+      <td>${l.action ?? '—'}</td>
+      <td><span class="badge ${l.decision === 'allow' ? 'badge-allow' : 'badge-deny'}">${l.decision ?? '—'}</span></td>
+      <td>${riskBadge(l.risk_score ?? 0)}</td>
+    </tr>
+  `).join('');
+}
 
-      if (lineChart) {
-        lineChart.data.labels = labels;
-        lineChart.data.datasets[0].data = scores;
-        lineChart.update();
-      } else {
-        const ctx2 = document.getElementById('lineChart').getContext('2d');
-        lineChart = new Chart(ctx2, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              label: 'Risk Score',
-              data: scores,
-              borderColor: '#58a6ff',
-              backgroundColor: 'rgba(88,166,255,0.1)',
-              tension: 0.3,
-              fill: true
-            }]
-          },
-          options: {
-            scales: {
-              y: { min: 0, max: 1, ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
-              x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
-            },
-            plugins: { legend: { labels: { color: '#c9d1d9' } } }
-          }
-        });
-      }
-    }
-
-    function riskBadge(score) {
-      if (score >= 0.75) return `<span class="badge bg-danger">${score.toFixed(2)}</span>`;
-      if (score >= 0.50) return `<span class="badge bg-warning text-dark">${score.toFixed(2)}</span>`;
-      if (score >= 0.25) return `<span class="badge bg-info text-dark">${score.toFixed(2)}</span>`;
-      return `<span class="badge bg-success">${score.toFixed(2)}</span>`;
-    }
-
-    function updateTable(logs) {
-      const tbody = document.getElementById('logsBody');
-      if (!logs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">No data</td></tr>';
-        return;
-      }
-      tbody.innerHTML = logs.map(l => `
-        <tr>
-          <td>${l.timestamp ? l.timestamp.substring(0,19).replace('T',' ') : '—'}</td>
-          <td>${l.user_id}</td>
-          <td>${l.resource}</td>
-          <td>${l.action}</td>
-          <td><span class="badge ${l.decision === 'allow' ? 'bg-success' : 'bg-danger'}">${l.decision}</span></td>
-          <td>${riskBadge(l.risk_score ?? 0)}</td>
-        </tr>`).join('');
-    }
-
-    // Countdown timer + auto-refresh
-    let countdown = 30;
-    function tick() {
-      document.getElementById('timer').textContent = countdown;
-      if (--countdown < 0) {
-        countdown = 30;
-        fetchStats();
-      }
-    }
-
+function tick() {
+  const timerEl = document.getElementById('timer');
+  if (!timerEl) return;
+  if (refreshPaused) {
+    timerEl.textContent = 'paused';
+    return;
+  }
+  timerEl.textContent = countdown;
+  countdown -= 1;
+  if (countdown < 0) {
+    countdown = 30;
     fetchStats();
-    setInterval(tick, 1000);
-  </script>
-</body>
-</html>
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  fetchStats();
+  setInterval(tick, 1000);
+
+  const btn = document.getElementById('toggleRefresh');
+  btn.addEventListener('click', () => {
+    refreshPaused = !refreshPaused;
+    btn.textContent = refreshPaused ? 'Resume' : 'Pause';
+  });
+});
+</script>
+{% endblock %}

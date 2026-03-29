@@ -57,25 +57,37 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def _decode_token(token: str) -> dict[str, Any]:
-    """Decode and validate a Keycloak JWT.
-
-    Steps:
-    1. Fetch JWKS from Keycloak (cached).
-    2. Decode and verify the token signature.
-    3. Validate ``iss``, ``aud`` (optional), and ``exp`` claims.
-
-    Raises :exc:`InvalidTokenError` on any failure.
-    """
+    """Decode and validate a Keycloak JWT using the JWT header kid."""
     try:
         jwks_data = await fetch_jwks()
     except Exception as exc:
         raise InvalidTokenError(f"Unable to fetch JWKS: {exc}") from exc
 
     try:
+        unverified_header = jwt.get_unverified_header(token)
+        token_kid = unverified_header.get("kid")
+        if not token_kid:
+            raise InvalidTokenError("Token missing 'kid' header.")
+    except Exception as exc:
+        raise InvalidTokenError(f"Invalid token header: {exc}") from exc
+
+    try:
         jwks_set = jwt.PyJWKSet.from_dict(jwks_data)
         if not jwks_set.keys:
             raise InvalidTokenError("JWKS contains no signing keys.")
-        signing_key = jwks_set.keys[0]
+
+        signing_key_obj = None
+        for k in jwks_set.keys:
+            # PyJWT PyJWK may expose kid as key_id or via dict data
+            kid = getattr(k, "key_id", None)
+            if kid is None and hasattr(k, "_jwk_data"):
+                kid = k._jwk_data.get("kid")
+            if kid == token_kid:
+                signing_key_obj = k
+                break
+
+        if signing_key_obj is None:
+            raise InvalidTokenError(f"No matching JWK found for kid '{token_kid}'.")
     except InvalidTokenError:
         raise
     except Exception as exc:
@@ -84,11 +96,11 @@ async def _decode_token(token: str) -> dict[str, Any]:
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
-            signing_key.key,
+            signing_key_obj.key,
             algorithms=["RS256"],
             issuer=get_issuer(),
             options={
-                "verify_aud": False,   # Keycloak tokens may set aud=account
+                "verify_aud": False,
                 "verify_exp": True,
             },
         )
@@ -97,6 +109,8 @@ async def _decode_token(token: str) -> dict[str, Any]:
         raise InvalidTokenError("Token has expired.") from exc
     except jwt.InvalidIssuerError as exc:
         raise InvalidTokenError("Token issuer is invalid.") from exc
+    except jwt.InvalidSignatureError as exc:
+        raise InvalidTokenError("Token signature verification failed.") from exc
     except jwt.DecodeError as exc:
         raise InvalidTokenError(f"Token decode error: {exc}") from exc
     except Exception as exc:
