@@ -131,32 +131,22 @@ vpn_detected if {
 risk_score = 5
 
 # ---------------------------------------------------------------------------
-# Deny reason
+# Deny reason - determine the reason for denial
 # ---------------------------------------------------------------------------
-deny_reason = reason if {
-    deny_ip_reputation
-    reason := "Blocked IP address"
-} else = reason if {
-    deny_geolocation
-    reason := "Geolocation blocked"
-} else = reason if {
-    deny_repeated_denial
-    reason := "Too many failed attempts"
-} else = reason if {
-    deny_user_agent
-    reason := "Suspicious user agent"
-} else = reason if {
-    deny_time_of_day
-    reason := "Outside allowed hours"
-} else = reason if {
-    deny_resource_sensitivity
-    reason := "Resource access not permitted for role"
-} else = reason if {
-    deny_action_type
-    reason := "Action not permitted for role"
-} else = reason if {
-    allow
-    reason := "Access granted"
-} else = reason if {
-    reason := "Policy denied"
-}
+deny_reason = "Blocked IP address" if deny_ip_reputation
+
+deny_reason = "Geolocation blocked" if deny_geolocation
+
+deny_reason = "Too many failed attempts" if deny_repeated_denial
+
+deny_reason = "Suspicious user agent" if deny_user_agent
+
+deny_reason = "Outside allowed hours" if deny_time_of_day
+
+deny_reason = "Resource access not permitted for role" if deny_resource_sensitivity
+
+deny_reason = "Action not permitted for role" if deny_action_type
+
+deny_reason = "Access granted" if allow
+
+deny_reason = "Policy denied"
