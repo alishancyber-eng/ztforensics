@@ -139,7 +139,7 @@ services:
     image: openpolicyagent/opa:0.68.0
     container_name: ztf-opa
     restart: unless-stopped
-    command: run --server --watch /policies
+    command: run --server /policies/opa_policies.rego
     volumes:
       - ./opa/policies:/policies:ro
     ports:
