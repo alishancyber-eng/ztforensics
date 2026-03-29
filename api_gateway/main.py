@@ -22,6 +22,7 @@ from database import AccessLog, get_db, init_db
 from risk_scoring import RiskScorer
 from schemas import UserContext
 from storage import StorageManager
+from config_manager import config_manager
 
 load_dotenv()
 
@@ -313,4 +314,27 @@ async def forensics_export(
         "total_records": len(evidence),
         "chain_stats": chain_stats,
         "evidence": evidence,
+    }
+
+
+
+@app.get("/config/current")
+async def get_current_config(
+    _user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Get current environment configuration"""
+    return {
+        "environment": config_manager.current_env,
+        "organization": config_manager.get_organization_name(),
+        "sector": config_manager.get_sector(),
+        "risk_factors": config_manager.get_risk_factors(),
+        "thresholds": {
+            "low": config_manager.get_risk_threshold('low'),
+            "medium": config_manager.get_risk_threshold('medium'),
+            "high": config_manager.get_risk_threshold('high'),
+            "critical": config_manager.get_risk_threshold('critical')
+        },
+        "audit_retention_days": config_manager.get_audit_retention_days(),
+        "hipaa_compliant": config_manager.is_hipaa_compliant(),
+        "pci_compliant": config_manager.is_pci_compliant()
     }

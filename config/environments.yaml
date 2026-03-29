@@ -1,0 +1,231 @@
+# ============================================================
+# Universal ZTForensics Configuration System
+# Change 'current_environment' at the bottom to switch sectors
+# ============================================================
+
+environments:
+  
+  # ============ BANKING SECTOR ============
+  banking:
+    name: "ZTForensics - Banking Edition"
+    organization: "National Bank of India"
+    sector: "Financial Services"
+    
+    risk_thresholds:
+      low: 30
+      medium: 50
+      high: 70
+      critical: 85
+    
+    risk_factors:
+      foreign_ip: 35
+      unusual_time: 30
+      failed_logins: 20
+      new_device: 15
+      admin_resource: 25
+      delete_action: 10
+      large_transaction: 40
+      mass_download: 35
+    
+    whitelist_locations:
+      - name: "Headquarters"
+        ip_range: "192.168.1.0/24"
+        country: "India"
+        city: "Mumbai"
+      
+      - name: "Regional Office"
+        ip_range: "192.168.2.0/24"
+        country: "India"
+        city: "Delhi"
+    
+    audit:
+      retention_days: 2555
+      pci_compliant: true
+      forensic_proof: true
+
+  # ============ HEALTHCARE SECTOR ============
+  healthcare:
+    name: "ZTForensics - Healthcare Edition"
+    organization: "Apollo Hospitals"
+    sector: "Healthcare"
+    
+    risk_thresholds:
+      low: 40
+      medium: 55
+      high: 70
+      critical: 85
+    
+    risk_factors:
+      foreign_ip: 20
+      unusual_time: 15
+      failed_logins: 15
+      new_device: 10
+      admin_resource: 30
+      access_patient_records: 35
+      prescription_access: 30
+    
+    whitelist_locations:
+      - name: "Main Hospital"
+        ip_range: "10.0.0.0/16"
+        country: "India"
+        city: "Mumbai"
+    
+    audit:
+      retention_days: 2555
+      hipaa_compliant: true
+      patient_notification: true
+
+  # ============ MILITARY SECTOR ============
+  military:
+    name: "ZTForensics - Military Edition"
+    organization: "Defense Ministry"
+    sector: "Defense & Military"
+    
+    risk_thresholds:
+      low: 20
+      medium: 40
+      high: 60
+      critical: 80
+    
+    risk_factors:
+      foreign_ip: 95
+      unusual_time: 40
+      failed_logins: 50
+      new_device: 60
+      admin_resource: 80
+      classified_access: 100
+      secure_comm_access: 90
+    
+    whitelist_locations:
+      - name: "Military Base"
+        ip_range: "172.16.0.0/12"
+        country: "India"
+        city: "Secured"
+    
+    audit:
+      retention_days: 36500
+      forensic_proof: true
+      biometric_required: true
+      dual_authentication: true
+
+  # ============ EDUCATION SECTOR ============
+  education:
+    name: "ZTForensics - Education Edition"
+    organization: "Indian Institute of Technology"
+    sector: "Education"
+    
+    risk_thresholds:
+      low: 40
+      medium: 60
+      high: 75
+      critical: 90
+    
+    risk_factors:
+      foreign_ip: 15
+      unusual_time: 10
+      failed_logins: 10
+      new_device: 8
+      admin_resource: 25
+      student_record_access: 20
+      faculty_grade_access: 30
+    
+    whitelist_locations:
+      - name: "Campus"
+        ip_range: "10.0.0.0/8"
+        country: "India"
+        city: "Campus"
+    
+    audit:
+      retention_days: 365
+      ferpa_compliant: true
+      allows_international: true
+
+  # ============ E-COMMERCE SECTOR ============
+  ecommerce:
+    name: "ZTForensics - E-Commerce Edition"
+    organization: "MegaShop Online"
+    sector: "E-Commerce"
+    
+    risk_thresholds:
+      low: 50
+      medium: 65
+      high: 80
+      critical: 95
+    
+    risk_factors:
+      foreign_ip: 10
+      unusual_time: 5
+      failed_logins: 15
+      new_device: 5
+      admin_resource: 30
+      large_purchase: 20
+      payment_access: 35
+    
+    whitelist_locations: []
+    
+    audit:
+      retention_days: 730
+      pci_compliant: true
+      allows_international: true
+
+  # ============ GOVERNMENT SECTOR ============
+  government:
+    name: "ZTForensics - Government Edition"
+    organization: "Government Agency"
+    sector: "Government"
+    
+    risk_thresholds:
+      low: 35
+      medium: 55
+      high: 70
+      critical: 85
+    
+    risk_factors:
+      foreign_ip: 50
+      unusual_time: 25
+      failed_logins: 30
+      new_device: 20
+      admin_resource: 40
+      confidential_access: 60
+      citizen_data_access: 50
+    
+    whitelist_locations:
+      - name: "Government Office"
+        ip_range: "203.0.113.0/24"
+        country: "India"
+        city: "Capital"
+    
+    audit:
+      retention_days: 3650
+      government_compliant: true
+
+  # ============ RETAIL SECTOR ============
+  retail:
+    name: "ZTForensics - Retail Edition"
+    organization: "Retail Chain"
+    sector: "Retail"
+    
+    risk_thresholds:
+      low: 40
+      medium: 60
+      high: 75
+      critical: 90
+    
+    risk_factors:
+      foreign_ip: 20
+      unusual_time: 15
+      failed_logins: 10
+      new_device: 12
+      admin_resource: 25
+      inventory_access: 20
+      sales_data_access: 15
+    
+    audit:
+      retention_days: 730
+
+# ============================================================
+# SELECT ENVIRONMENT HERE
+# Options: banking, healthcare, military, education, 
+#          ecommerce, government, retail
+# ============================================================
+current_environment: "banking"

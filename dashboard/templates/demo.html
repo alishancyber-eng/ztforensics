@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZTForensics - Live Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .demo-box {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 5px solid #ddd;
+        }
+
+        .demo-box.normal {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+
+        .demo-box.hacked {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+
+        .demo-box h3 {
+            margin-bottom: 10px;
+        }
+
+        .demo-box p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .result-box {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .result-allowed {
+            background: #e8f5e9;
+            border: 2px solid #4CAF50;
+            color: #2e7d32;
+        }
+
+        .result-denied {
+            background: #ffebee;
+            border: 2px solid #f44336;
+            color: #c62828;
+        }
+
+        .result-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .risk-bar {
+            width: 100%;
+            height: 30px;
+            background: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .risk-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50 0%, #FFC107 50%, #f44336 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔒 ZTForensics Live Demo</h1>
+            <p>Demonstration of Zero Trust Access Control in Action</p>
+        </header>
+
+        <div style="background: white; padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+            <h2>📋 Demo Scenarios</h2>
+            
+            <div class="demo-box normal">
+                <h3>✅ Normal Employee Access</h3>
+                <p><strong>User:</strong> Raj (Employee) | <strong>Time:</strong> 10:30 AM</p>
+                <p><strong>Location:</strong> Mumbai Office | <strong>Device:</strong> Company Laptop</p>
+                <p><strong>Action:</strong> View Customer Records</p>
+                <button onclick="simulateNormalAccess()">▶️ Simulate Access</button>
+            </div>
+
+            <div class="demo-box hacked">
+                <h3>❌ Hacked Account (Attacker)</h3>
+                <p><strong>Attacker:</strong> Using Stolen Credentials | <strong>Time:</strong> 3:00 AM</p>
+                <p><strong>Location:</strong> Russia | <strong>Device:</strong> Unknown</p>
+                <p><strong>Action:</strong> Transfer $1 Million</p>
+                <button onclick="simulateHackedAccess()">▶️ Simulate Attack</button>
+            </div>
+
+            <div class="demo-box normal">
+                <h3>🟡 Emergency Access (Different Location)</h3>
+                <p><strong>User:</strong> Raj (Emergency) | <strong>Time:</strong> 11:00 PM</p>
+                <p><strong>Location:</strong> Home | <strong>Device:</strong> Personal Laptop</p>
+                <p><strong>Action:</strong> Access Urgent Client Data</p>
+                <button onclick="simulateEmergencyAccess()">▶️ Simulate Access</button>
+            </div>
+
+            <div id="result-area"></div>
+        </div>
+
+        <div style="background: white; padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+            <h2>📊 Real-Time Dashboard</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-number">1,247</div>
+                    <div>Total Accesses</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" style="color: #2ed573;">1,198</div>
+                    <div>Allowed ✅</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" style="color: #ff4757;">35</div>
+                    <div>Denied ❌</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" style="color: #ffa502;">14</div>
+                    <div>Alerts ⚠️</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="background: white; padding: 30px; border-radius: 10px;">
+            <h2>📋 Evidence Timeline</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Risk Score</th>
+                        <th>Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>10:30 AM</td>
+                        <td>raj@company.com</td>
+                        <td>VIEW_RECORDS</td>
+                        <td style="color: #2ed573;"><strong>15/100</strong></td>
+                        <td>✅ ALLOWED</td>
+                    </tr>
+                    <tr>
+                        <td>03:00 AM</td>
+                        <td>raj@company.com</td>
+                        <td>TRANSFER_MONEY</td>
+                        <td style="color: #ff4757;"><strong>92/100</strong></td>
+                        <td>❌ DENIED</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function simulateNormalAccess() {
+            const result = `
+                <div class="result-box result-allowed">
+                    <div class="result-title">✅ ACCESS ALLOWED</div>
+                    <p><strong>Risk Factors:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li>✅ Known location (Office): 0 points</li>
+                        <li>✅ Business hours: 0 points</li>
+                        <li>✅ Company device: 0 points</li>
+                        <li>✅ No failed logins: 0 points</li>
+                    </ul>
+                    <div class="risk-bar">
+                        <div class="risk-fill" style="width: 15%; background: linear-gradient(90deg, #4CAF50, #4CAF50);">15/100</div>
+                    </div>
+                    <p><strong>Decision:</strong> ALLOW (Low Risk) ✅</p>
+                </div>
+            `;
+            document.getElementById('result-area').innerHTML = result;
+        }
+
+        function simulateHackedAccess() {
+            const result = `
+                <div class="result-box result-denied">
+                    <div class="result-title">❌ ACCESS DENIED - FRAUD DETECTED</div>
+                    <p><strong>Risk Factors:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li>🔴 Foreign IP (Russia): +30 points</li>
+                        <li>🔴 Unusual time (3 AM): +25 points</li>
+                        <li>🔴 New device: +10 points</li>
+                        <li>🔴 Large transfer: +20 points</li>
+                    </ul>
+                    <div class="risk-bar">
+                        <div class="risk-fill" style="width: 92%; background: linear-gradient(90deg, #f44336, #f44336);">92/100</div>
+                    </div>
+                    <p><strong>Decision:</strong> DENY (Critical Risk) ❌</p>
+                    <p style="margin-top: 10px; color: #c62828;">🚨 Alert: Failed login attempt from Russia IP</p>
+                </div>
+            `;
+            document.getElementById('result-area').innerHTML = result;
+        }
+
+        function simulateEmergencyAccess() {
+            const result = `
+                <div class="result-box" style="background: #fff3cd; border: 2px solid #ffa502; color: #856404;">
+                    <div class="result-title">⚠️ MEDIUM RISK - MFA REQUIRED</div>
+                    <p><strong>Risk Factors:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li>🟡 Unusual location (Home): +15 points</li>
+                        <li>🟡 After hours (11 PM): +20 points</li>
+                        <li>🟡 New device: +10 points</li>
+                    </ul>
+                    <div class="risk-bar">
+                        <div class="risk-fill" style="width: 58%; background: linear-gradient(90deg, #ffa502, #ffa502);">58/100</div>
+                    </div>
+                    <p><strong>Decision:</strong> ALERT + OTP REQUIRED ⚠️</p>
+                    <p style="margin-top: 10px;">✅ After OTP verification: Access ALLOWED</p>
+                </div>
+            `;
+            document.getElementById('result-area').innerHTML = result;
+        }
+    </script>
+</body>
+</html>
