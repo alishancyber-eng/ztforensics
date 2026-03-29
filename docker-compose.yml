@@ -142,6 +142,11 @@ services:
     command: run --server
     ports:
       - "8181:8181"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8181/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     networks:
       - ztf-net
     logging:
@@ -179,8 +184,6 @@ services:
       - "${API_GATEWAY_PORT:-8000}:8000"
     depends_on:
       ztf-postgres:
-        condition: service_healthy
-      ztf-opa:
         condition: service_healthy
       ztf-keycloak:
         condition: service_healthy
