@@ -133,20 +133,46 @@ risk_score = 5
 # ---------------------------------------------------------------------------
 # Deny reason - determine the reason for denial
 # ---------------------------------------------------------------------------
-deny_reason = "Blocked IP address" if deny_ip_reputation
+deny_reason[msg] {
+    deny_ip_reputation
+    msg = "Blocked IP address"
+}
 
-deny_reason = "Geolocation blocked" if deny_geolocation
+deny_reason[msg] {
+    deny_geolocation
+    msg = "Geolocation blocked"
+}
 
-deny_reason = "Too many failed attempts" if deny_repeated_denial
+deny_reason[msg] {
+    deny_repeated_denial
+    msg = "Too many failed attempts"
+}
 
-deny_reason = "Suspicious user agent" if deny_user_agent
+deny_reason[msg] {
+    deny_user_agent
+    msg = "Suspicious user agent"
+}
 
-deny_reason = "Outside allowed hours" if deny_time_of_day
+deny_reason[msg] {
+    deny_time_of_day
+    msg = "Outside allowed hours"
+}
 
-deny_reason = "Resource access not permitted for role" if deny_resource_sensitivity
+deny_reason[msg] {
+    deny_resource_sensitivity
+    msg = "Resource access not permitted for role"
+}
 
-deny_reason = "Action not permitted for role" if deny_action_type
+deny_reason[msg] {
+    deny_action_type
+    msg = "Action not permitted for role"
+}
 
-deny_reason = "Access granted" if allow
+deny_reason[msg] {
+    allow
+    msg = "Access granted"
+}
 
-deny_reason = "Policy denied"
+deny_reason[msg] {
+    msg = "Policy denied"
+}
