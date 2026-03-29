@@ -1,79 +1,97 @@
 """
-ZTForensics Dashboard – Flask web application.
+Flask Dashboard UI for ZTForensics.
+
+Runs on port 5000 and fetches data from the FastAPI Gateway (port 8000).
 """
-import logging
+
 import os
-from typing import Any
 
 import requests
-from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template
-
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-API_GATEWAY_URL: str = os.getenv("API_GATEWAY_URL", "http://localhost:8000")
+from flask import Flask, render_template
 
 app = Flask(__name__)
 
+# Internal Docker network URL for the FastAPI service
+API_BASE = os.environ.get("API_BASE_URL", "http://api-gateway:8000")
+# Public URL used in browser-facing links (e.g. download buttons)
+API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", "http://localhost:8000")
 
-def _get(path: str, fallback: Any = None) -> Any:
-    """Make a GET request to the API gateway.
 
-    Args:
-        path: URL path (e.g. ``/health``).
-        fallback: Value to return when the gateway is unreachable.
-
-    Returns:
-        Parsed JSON response or *fallback*.
-    """
+def _api_get(path: str, params: dict = None) -> dict:
+    """Safe wrapper around requests.get with a timeout and error handling."""
     try:
-        resp = requests.get(f"{API_GATEWAY_URL}{path}", timeout=5)
+        resp = requests.get(f"{API_BASE}{path}", params=params, timeout=5)
         resp.raise_for_status()
         return resp.json()
-    except requests.exceptions.RequestException as exc:
-        logger.warning("API gateway unavailable for %s: %s", path, exc)
-        return fallback
+    except requests.RequestException as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @app.route("/")
+@app.route("/dashboard")
 def index():
-    """Render the main dashboard page."""
-    return render_template("index.html")
-
-
-@app.route("/api/stats")
-def api_stats():
-    """Proxy the forensic summary from the API gateway."""
-    data = _get(
-        "/forensics/summary",
-        fallback={
-            "total_requests": 0,
-            "allowed": 0,
-            "denied": 0,
-            "high_risk_events": 0,
-            "recent_logs": [],
-            "error": "API gateway unavailable",
-        },
+    summary = _api_get("/forensics/summary-public")  
+    chain = _api_get("/forensics/verify-chain")
+    timeline = _api_get("/forensics/timeline", params={"interval": "hour"})
+    return render_template(
+        "index.html",
+        summary=summary,
+        chain=chain,
+        timeline=timeline.get("timeline", []),
     )
-    return jsonify(data)
 
 
-@app.route("/api/health")
-def api_health():
-    """Proxy the health check from the API gateway."""
-    data = _get(
-        "/health",
-        fallback={
-            "status": "unavailable",
-            "services": {"database": "down", "blockchain": "down", "storage": "down"},
-            "error": "API gateway unavailable",
-        },
+@app.route("/dashboard/timeline")
+def timeline_page():
+    hour_data = _api_get("/forensics/timeline", params={"interval": "hour"})
+    day_data = _api_get("/forensics/timeline", params={"interval": "day"})
+    return render_template(
+        "timeline.html",
+        hour_timeline=hour_data.get("timeline", []),
+        day_timeline=day_data.get("timeline", []),
     )
-    return jsonify(data)
+
+
+@app.route("/dashboard/anomalies")
+def anomalies_page():
+    data = _api_get("/forensics/anomalies")
+    return render_template(
+        "anomalies.html",
+        anomalies=data.get("anomalies", []),
+        total=data.get("total", 0),
+    )
+
+
+@app.route("/dashboard/verify")
+def verify_page():
+    chain = _api_get("/forensics/verify-chain")
+    return render_template("verify.html", chain=chain)
+
+
+@app.route("/dashboard/evidence")
+def evidence_page():
+    summary = _api_get("/forensics/summary-public")  # ← CHANGED from /forensics/summary
+    return render_template("evidence.html", summary=summary, api_public_url=API_PUBLIC_URL)
+
+
+@app.route("/admin")
+def admin_panel():
+    """Admin control panel for managing users, policies, locations, devices"""
+    return render_template("admin.html")
+
+
+@app.route("/demo")
+def demo_page():
+    """Live demo showing access control scenarios"""
+    return render_template("demo.html")
+
+
+@app.route("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "service": "dashboard"}
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("DASHBOARD_PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
