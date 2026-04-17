@@ -50,6 +50,8 @@ OPA_URL: str = os.getenv("OPA_URL", "http://localhost:8181")
 OTP_EXPIRY_MINUTES: int = int(os.getenv("OTP_EXPIRY_MINUTES", "5"))
 OTP_MAX_ATTEMPTS: int = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
 TEMP_WHITELIST_DEFAULT_DAYS: int = int(os.getenv("TEMP_WHITELIST_DEFAULT_DAYS", "7"))
+ANOMALY_DENY_THRESHOLD: int = int(os.getenv("ANOMALY_DENY_THRESHOLD", "3"))
+ANOMALY_IP_ACTIVITY_THRESHOLD: int = int(os.getenv("ANOMALY_IP_ACTIVITY_THRESHOLD", "5"))
 
 # Module-level singletons
 blockchain_manager = BlockchainManager()
@@ -574,10 +576,31 @@ async def access(
 
 @app.get("/forensics/verify-chain")
 async def verify_chain(_user: UserContext = Depends(get_current_user)) -> dict[str, Any]:
-    result = blockchain_manager.verify_chain()
-    stats = blockchain_manager.get_chain_stats()
-    return {**result, **stats}
+    try:
+        result = blockchain_manager.verify_chain() or {}
+        stats = blockchain_manager.get_chain_stats() or {}
 
+        is_valid = bool(result.get("is_valid", False))
+        return {
+            "is_valid": is_valid,
+            "status": "ok" if is_valid else "broken",
+            "message": result.get("message", "Chain verification completed"),
+            "records_checked": int(result.get("checked_blocks", 0) or 0),
+            "total_records": int(stats.get("total_blocks", 0) or 0),
+            "details": result,
+            "stats": stats,
+        }
+    except Exception as exc:
+        logger.exception("Chain verification failed")
+        return {
+            "is_valid": False,
+            "status": "broken",
+            "message": f"Verification error: {str(exc)}",
+            "records_checked": 0,
+            "total_records": 0,
+            "details": {},
+            "stats": {},
+        }
 
 @app.get("/forensics/summary")
 async def forensics_summary(
@@ -777,7 +800,7 @@ async def forensics_anomalies(db: Session = Depends(get_db)) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
 
     for user_id, count in by_user_denies.items():
-        if count >= 3:
+        if count >= ANOMALY_DENY_THRESHOLD:
             anomalies.append({
                 "type": "repeated_denials",
                 "user": user_id,
@@ -788,7 +811,7 @@ async def forensics_anomalies(db: Session = Depends(get_db)) -> dict[str, Any]:
             })
 
     for ip, count in by_ip_count.items():
-        if count >= 20:
+        if count >= ANOMALY_IP_ACTIVITY_THRESHOLD:
             anomalies.append({
                 "type": "high_activity_ip",
                 "ip_address": ip,
