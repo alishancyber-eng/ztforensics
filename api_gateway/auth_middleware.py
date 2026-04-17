@@ -1,21 +1,11 @@
 """
 JWT authentication middleware, dependency helpers, and RBAC decorators.
-
-Validates Keycloak-issued JWT tokens and provides:
-- ``get_current_user`` – FastAPI dependency returning a :class:`UserContext`.
-- ``@require_auth`` – decorator that enforces a valid JWT.
-- ``@require_role(*roles)`` – decorator that enforces role membership.
-- ``@require_scope(*scopes)`` – decorator that enforces scope membership.
-
-Custom exceptions
------------------
-- :exc:`InvalidTokenError` – token missing, malformed, or expired.
-- :exc:`InvalidClaimError` – required claim absent or wrong value.
-- :exc:`InsufficientPermissions` – user lacks the required role/scope.
 """
 
 import functools
+import inspect
 import logging
+import os
 from typing import Any, Callable, Optional
 
 import jwt
@@ -27,106 +17,105 @@ from schemas import UserContext
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Custom exceptions
-# ---------------------------------------------------------------------------
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+VERIFY_AUDIENCE = os.environ.get("KEYCLOAK_VERIFY_AUD", "false").lower() == "true"
+VERIFY_ISSUER = os.environ.get("KEYCLOAK_VERIFY_ISS", "true").lower() == "true"
+EXPECTED_AUDIENCE = os.environ.get("KEYCLOAK_AUDIENCE", get_client_id())
 
 
 class InvalidTokenError(Exception):
-    """Raised when the JWT is missing, malformed, or expired."""
+    pass
 
 
 class InvalidClaimError(Exception):
-    """Raised when a required JWT claim is absent or has an unexpected value."""
-
-
-class InsufficientPermissions(Exception):
-    """Raised when the authenticated user lacks the required role or scope."""
-
-
-# ---------------------------------------------------------------------------
-# Bearer scheme (auto-extracts the Authorization header)
-# ---------------------------------------------------------------------------
-
-_bearer_scheme = HTTPBearer(auto_error=False)
-
-
-# ---------------------------------------------------------------------------
-# Core validation helper
-# ---------------------------------------------------------------------------
+    pass
 
 
 async def _decode_token(token: str) -> dict[str, Any]:
-    """Decode and validate a Keycloak JWT using the JWT header kid."""
     try:
         jwks_data = await fetch_jwks()
-    except Exception as exc:
-        raise InvalidTokenError(f"Unable to fetch JWKS: {exc}") from exc
-
-    try:
         unverified_header = jwt.get_unverified_header(token)
         token_kid = unverified_header.get("kid")
         if not token_kid:
             raise InvalidTokenError("Token missing 'kid' header.")
     except Exception as exc:
-        raise InvalidTokenError(f"Invalid token header: {exc}") from exc
+        raise InvalidTokenError(f"Token/JWKS pre-validation failed: {exc}") from exc
 
     try:
         jwks_set = jwt.PyJWKSet.from_dict(jwks_data)
-        if not jwks_set.keys:
-            raise InvalidTokenError("JWKS contains no signing keys.")
-
         signing_key_obj = None
         for k in jwks_set.keys:
-            # PyJWT PyJWK may expose kid as key_id or via dict data
             kid = getattr(k, "key_id", None)
             if kid is None and hasattr(k, "_jwk_data"):
                 kid = k._jwk_data.get("kid")
             if kid == token_kid:
                 signing_key_obj = k
                 break
-
         if signing_key_obj is None:
             raise InvalidTokenError(f"No matching JWK found for kid '{token_kid}'.")
-    except InvalidTokenError:
-        raise
     except Exception as exc:
         raise InvalidTokenError(f"Invalid JWKS data: {exc}") from exc
+
+    options = {
+        "verify_aud": VERIFY_AUDIENCE,
+        "verify_exp": True,
+        "verify_iss": VERIFY_ISSUER,
+    }
+
+    decode_kwargs: dict[str, Any] = {
+        "algorithms": ["RS256"],
+        "options": options,
+    }
+
+    if VERIFY_ISSUER:
+        decode_kwargs["issuer"] = get_issuer()
+    if VERIFY_AUDIENCE:
+        decode_kwargs["audience"] = EXPECTED_AUDIENCE
 
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
             signing_key_obj.key,
-            algorithms=["RS256"],
-            issuer=get_issuer(),
-            options={
-                "verify_aud": False,
-                "verify_exp": True,
-            },
+            **decode_kwargs,
         )
         return payload
     except jwt.ExpiredSignatureError as exc:
         raise InvalidTokenError("Token has expired.") from exc
     except jwt.InvalidIssuerError as exc:
         raise InvalidTokenError("Token issuer is invalid.") from exc
-    except jwt.InvalidSignatureError as exc:
-        raise InvalidTokenError("Token signature verification failed.") from exc
-    except jwt.DecodeError as exc:
-        raise InvalidTokenError(f"Token decode error: {exc}") from exc
-    except Exception as exc:
+    except jwt.InvalidAudienceError as exc:
+        raise InvalidTokenError("Token audience is invalid.") from exc
+    except jwt.InvalidTokenError as exc:
         raise InvalidTokenError(f"Token validation failed: {exc}") from exc
+    except Exception as exc:
+        raise InvalidTokenError(f"Token decode failed: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Claim extraction helper
-# ---------------------------------------------------------------------------
+def _extract_roles(payload: dict[str, Any]) -> list[str]:
+    roles: list[str] = []
+
+    realm_roles = ((payload.get("realm_access") or {}).get("roles") or [])
+    if isinstance(realm_roles, list):
+        roles.extend([str(r) for r in realm_roles])
+
+    resource_access = payload.get("resource_access") or {}
+    if isinstance(resource_access, dict):
+        for _, block in resource_access.items():
+            client_roles = (block or {}).get("roles") or []
+            if isinstance(client_roles, list):
+                roles.extend([str(r) for r in client_roles])
+
+    seen = set()
+    deduped = []
+    for r in roles:
+        if r not in seen:
+            seen.add(r)
+            deduped.append(r)
+    return deduped
 
 
 def _extract_user_context(payload: dict[str, Any]) -> UserContext:
-    """Build a :class:`UserContext` from a decoded JWT payload.
-
-    Raises :exc:`InvalidClaimError` when the ``sub`` claim is absent.
-    """
     sub: Optional[str] = payload.get("sub")
     if not sub:
         raise InvalidClaimError("JWT missing required 'sub' claim.")
@@ -134,15 +123,13 @@ def _extract_user_context(payload: dict[str, Any]) -> UserContext:
     preferred_username: str = payload.get("preferred_username") or sub
     email: Optional[str] = payload.get("email")
     exp: Optional[int] = payload.get("exp")
+    roles = _extract_roles(payload)
 
-    # Roles are nested under realm_access.roles in Keycloak tokens
-    realm_access: dict = payload.get("realm_access", {})
-    roles: list[str] = realm_access.get("roles", [])
-    # Pick the first non-default role as the primary role, fallback to the
-    # first role available, or None.
-    _default_roles = {"default-roles-forensics", "offline_access", "uma_authorization"}
-    custom_roles = [r for r in roles if r not in _default_roles]
-    role: Optional[str] = custom_roles[0] if custom_roles else None
+    role = None
+    for r in roles:
+        if r.lower() not in {"default-roles-forensics", "offline_access", "uma_authorization"}:
+            role = r
+            break
 
     return UserContext(
         user_id=preferred_username,
@@ -154,18 +141,10 @@ def _extract_user_context(payload: dict[str, Any]) -> UserContext:
     )
 
 
-# ---------------------------------------------------------------------------
-# FastAPI dependency
-# ---------------------------------------------------------------------------
-
-
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
 ) -> UserContext:
-    """FastAPI dependency that validates the JWT and returns user context.
-
-    Raises HTTP 401 when the token is missing or invalid.
-    """
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -175,6 +154,7 @@ async def get_current_user(
 
     try:
         payload = await _decode_token(credentials.credentials)
+        request.state.token_scope = payload.get("scope", "") or ""
         return _extract_user_context(payload)
     except (InvalidTokenError, InvalidClaimError) as exc:
         raise HTTPException(
@@ -184,28 +164,21 @@ async def get_current_user(
         ) from exc
 
 
-# ---------------------------------------------------------------------------
-# Decorators
-# ---------------------------------------------------------------------------
-
-
 def require_auth(func: Callable) -> Callable:
-    """Endpoint decorator: requires a valid JWT token.
+    is_async = inspect.iscoroutinefunction(func)
 
-    The decorated endpoint *must* accept ``user: UserContext = Depends(get_current_user)``.
-    This decorator is provided for explicit self-documentation; in practice, adding
-    ``Depends(get_current_user)`` to the signature is equivalent.
-    """
     @functools.wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+    async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
         return await func(*args, **kwargs)
 
-    # Ensure FastAPI picks up the dependency by injecting it into the signature
-    # when the caller hasn't explicitly listed it.
-    import inspect
+    @functools.wraps(func)
+    def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    wrapper: Callable = async_wrapper if is_async else sync_wrapper
+
     sig = inspect.signature(func)
     if "user" not in sig.parameters:
-        # Append a 'user' parameter with the Depends default
         new_params = list(sig.parameters.values()) + [
             inspect.Parameter(
                 "user",
@@ -217,72 +190,3 @@ def require_auth(func: Callable) -> Callable:
         wrapper.__signature__ = sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper
-
-
-def require_role(*roles: str) -> Callable:
-    """Endpoint decorator factory: requires one of the given roles.
-
-    Usage::
-
-        @app.get("/admin")
-        @require_role("admin", "superuser")
-        async def admin_endpoint(user: UserContext = Depends(get_current_user)):
-            ...
-    """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            user: Optional[UserContext] = kwargs.get("user")
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authorization header missing.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            if not set(roles).intersection(set(user.roles)):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Role not authorized. Required one of: {list(roles)}.",
-                )
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def require_scope(*scopes: str) -> Callable:
-    """Endpoint decorator factory: requires one of the given scopes.
-
-    Scopes are read from the ``scope`` claim (space-separated string) in the JWT.
-
-    Usage::
-
-        @app.get("/read")
-        @require_scope("profile", "email")
-        async def read_endpoint(user: UserContext = Depends(get_current_user)):
-            ...
-    """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # The raw payload is not stored on UserContext, so scopes must be
-            # checked by the caller.  This decorator is a best-effort guard that
-            # verifies the 'scope' kwarg when supplied by a custom dependency.
-            request: Optional[Request] = kwargs.get("request")
-            scope_claim: str = ""
-            if request is not None:
-                scope_claim = getattr(request.state, "token_scope", "")
-
-            token_scopes = set(scope_claim.split()) if scope_claim else set()
-            required = set(scopes)
-            if not required.intersection(token_scopes) and required:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Required scope(s) {list(required)} not present in token.",
-                )
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator

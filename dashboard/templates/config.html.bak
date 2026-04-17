@@ -7,25 +7,17 @@
 <div class="card">
   <h2>Authorization</h2>
   <p style="font-size:.9rem;color:#4a5568;margin-bottom:.6rem;">
-    This page reads <code>/config/current</code> using your login session.
+    This page reads <code>/config/current</code> using the session token from navbar.
   </p>
-
-  {% if session_authenticated %}
-    <p style="color:#276749;">
-      Logged in as <strong>{{ session_username }}</strong>.
-    </p>
-    <a href="/auth/logout" style="display:inline-block;background:#8B1E1E;color:#fff;padding:.45rem .8rem;border-radius:6px;">Logout</a>
-    <button onclick="window.location.reload()" style="padding:.45rem .8rem;margin-left:.4rem;">Reload Config</button>
-  {% else %}
-    <p style="color:#c53030;">Login required.</p>
-    <a href="/auth/login" style="display:inline-block;background:#1a3a5c;color:#fff;padding:.45rem .8rem;border-radius:6px;">Login</a>
-  {% endif %}
+  <button onclick="openTokenPrompt()" style="padding:.45rem .8rem;">Set / Replace Token</button>
+  <button onclick="clearSessionToken()" style="padding:.45rem .8rem;margin-left:.4rem;">Logout Token</button>
+  <button onclick="window.location.reload()" style="padding:.45rem .8rem;margin-left:.4rem;">Reload Config</button>
 </div>
 
 <div class="card mt">
   <h2>Current Config</h2>
   {% if config_data.get('auth_required') %}
-    <p style="color:#c53030;">Authentication required to view config. Please login.</p>
+    <p style="color:#c53030;">Authentication required to view config. Use top-right "Set Token".</p>
   {% elif config_data.get('ok') is sameas false and config_data.get('error') %}
     <p style="color:#c53030;">Error: {{ config_data.get('error') }}</p>
   {% else %}

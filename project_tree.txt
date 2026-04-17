@@ -1,0 +1,171 @@
+Folder PATH listing for volume Local Disk
+Volume serial number is 5411-DF5A
+C:.
+|   .coverage
+|   .env
+|   .env.development
+|   .env.example
+|   .env.production
+|   .env.test
+|   .gitignore
+|   API_REFERENCE.md
+|   ARCHITECTURE.md
+|   attack_simulation.py
+|   config_schema.py
+|   conftest.py
+|   CONTRIBUTING.md
+|   DEPLOYMENT.md
+|   docker-compose.yml
+|   DOCKER_COMPOSE_GUIDE.md
+|   evidence_package.zip
+|   evidence_records.json
+|   forensic_summary.txt
+|   hash_verification.txt
+|   KEYCLOAK_SETUP.md
+|   LICENSE
+|   OPA_POLICIES.md
+|   prestart_checks.py
+|   project_tree.txt
+|   README.md
+|   report.pdf
+|   requirements.txt
+|   SECURITY.md
+|   SETUP.md
+|   suspicious.py
+|   TROUBLESHOOTING.md
+|   TROUBLESHOOTING_SETUP.md
+|   
++---.github
+|   \---workflows
+|           test.yml
+|           
++---.pytest_cache
+|   |   .gitignore
+|   |   CACHEDIR.TAG
+|   |   README.md
+|   |   
+|   \---v
+|       \---cache
+|               lastfailed
+|               nodeids
+|               stepwise
+|               
++---api_gateway
+|   |   anomaly_detector.py
+|   |   auth.py
+|   |   auth_middleware.py
+|   |   auth_routes.py
+|   |   blockchain.py
+|   |   config.py
+|   |   config_manager.py
+|   |   database.py
+|   |   Dockerfile
+|   |   evidence_packager.py
+|   |   forensic_engine.py
+|   |   keycloak_config.py
+|   |   main.py
+|   |   opa_client.py
+|   |   report_generator.py
+|   |   requirements.txt
+|   |   risk_scorer.py
+|   |   risk_scoring.py
+|   |   schemas.py
+|   |   storage.py
+|   |   timeline_analyzer.py
+|   |   
+|   \---__pycache__
+|           anomaly_detector.cpython-313.pyc
+|           forensic_engine.cpython-313.pyc
+|           risk_scorer.cpython-313.pyc
+|           timeline_analyzer.cpython-313.pyc
+|           
++---attack_simulator
+|       simulate.py
+|       
++---config
+|       environments.yaml
+|       
++---dashboard
+|   |   app.py
+|   |   Dockerfile
+|   |   requirements.txt
+|   |   
+|   \---templates
+|           admin.html
+|           anomalies.html
+|           base.html
+|           config.html
+|           demo.html
+|           evidence.html
+|           index.html
+|           timeline.html
+|           verify.html
+|           
++---htmlcov
+|       .gitignore
+|       class_index.html
+|       coverage_html_cb_188fc9a4.js
+|       favicon_32_cb_c827f16f.png
+|       function_index.html
+|       index.html
+|       keybd_closed_cb_900cfef5.png
+|       status.json
+|       style_cb_5c747636.css
+|       z_e70c529d5e25fd6c_anomaly_detector_py.html
+|       z_e70c529d5e25fd6c_auth_py.html
+|       z_e70c529d5e25fd6c_config_py.html
+|       z_e70c529d5e25fd6c_evidence_packager_py.html
+|       z_e70c529d5e25fd6c_forensic_engine_py.html
+|       z_e70c529d5e25fd6c_main_py.html
+|       z_e70c529d5e25fd6c_opa_client_py.html
+|       z_e70c529d5e25fd6c_report_generator_py.html
+|       z_e70c529d5e25fd6c_risk_scorer_py.html
+|       z_e70c529d5e25fd6c_timeline_analyzer_py.html
+|       
++---keycloak
+|   \---import
+|           forensics-realm.json
+|           
++---opa
+|   \---policies
+|           opa_policies.rego
+|           
++---policies
+|       main.rego
+|       
++---scripts
+|       backup.sh
+|       health_check.sh
+|       init_database.sh
+|       restore.sh
+|       setup_keycloak.sh
+|       validate_env.py
+|       
++---tests
+|   |   conftest.py
+|   |   test_anomaly_detector.py
+|   |   test_api.py
+|   |   test_api_integration.py
+|   |   test_auth.py
+|   |   test_edge_cases.py
+|   |   test_error_handling.py
+|   |   test_forensic_engine.py
+|   |   test_minio_storage.py
+|   |   test_risk_scorer.py
+|   |   test_timeline_analyzer.py
+|   |   
+|   \---__pycache__
+|           conftest.cpython-313-pytest-8.3.5.pyc
+|           conftest.cpython-313-pytest-9.0.2.pyc
+|           test_anomaly_detector.cpython-313-pytest-8.3.5.pyc
+|           test_anomaly_detector.cpython-313-pytest-9.0.2.pyc
+|           test_forensic_engine.cpython-313-pytest-8.3.5.pyc
+|           test_forensic_engine.cpython-313-pytest-9.0.2.pyc
+|           test_risk_scorer.cpython-313-pytest-8.3.5.pyc
+|           test_risk_scorer.cpython-313-pytest-9.0.2.pyc
+|           test_timeline_analyzer.cpython-313-pytest-8.3.5.pyc
+|           test_timeline_analyzer.cpython-313-pytest-9.0.2.pyc
+|           
+\---__pycache__
+        conftest.cpython-313-pytest-8.3.5.pyc
+        

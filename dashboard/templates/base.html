@@ -7,10 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f0f4f8; color: #1a202c;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f4f8; color: #1a202c; }
     a { color: inherit; text-decoration: none; }
 
     nav {
@@ -27,19 +24,30 @@
     .spacer { flex: 1 1 auto; }
     .refresh-info { font-size: .82rem; opacity: .9; }
 
+    .auth-chip {
+      display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem;
+      border-radius: 999px; font-size: .78rem; font-weight: 600;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1);
+    }
+    .auth-chip.ok { background: rgba(56,161,105,.25); border-color: rgba(56,161,105,.6); }
+    .auth-chip.no { background: rgba(197,48,48,.2); border-color: rgba(197,48,48,.5); }
+
+    .btn-nav {
+      border: 1px solid rgba(255,255,255,.35);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      border-radius: 6px;
+      padding: .35rem .65rem;
+      font-size: .82rem;
+      cursor: pointer;
+    }
+    .btn-nav:hover { background: rgba(255,255,255,.18); }
+
     main { max-width: 1200px; margin: 1.2rem auto 2rem auto; padding: 0 1rem; }
     h1 { font-size: 1.6rem; margin-bottom: 1.2rem; color: #1a3a5c; }
     h2 { font-size: 1.2rem; margin-bottom: .8rem; color: #2c5282; }
 
-    .card {
-      background: #fff; border-radius: 8px; padding: 1.2rem 1.5rem;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08);
-    }
-    .card-grid {
-      display: grid; gap: 1rem;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    }
-
+    .card { background: #fff; border-radius: 8px; padding: 1.2rem 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     table { width: 100%; border-collapse: collapse; font-size: .88rem; }
     th { background: #1a3a5c; color: #fff; padding: .5rem .8rem; text-align: left; }
     td { padding: .45rem .8rem; border-bottom: 1px solid #e2e8f0; }
@@ -49,15 +57,11 @@
       display: inline-block; padding: .15rem .55rem; border-radius: 12px;
       font-size: .75rem; font-weight: 600;
     }
-    .badge-red   { background: #fed7d7; color: #c53030; }
-    .badge-orange{ background: #feebc8; color: #c05621; }
-    .badge-green { background: #c6f6d5; color: #276749; }
-    .badge-blue  { background: #bee3f8; color: #2a69ac; }
-    .badge-allow { background: #c6f6d5; color: #276749; }
-    .badge-deny  { background: #fed7d7; color: #c53030; }
+    .badge-red{ background:#fed7d7;color:#c53030; }
+    .badge-orange{ background:#feebc8;color:#c05621; }
+    .badge-green{ background:#c6f6d5;color:#276749; }
 
     .mt { margin-top: 1.5rem; }
-    .chart-wrap { position: relative; height: 280px; }
     footer { text-align: center; padding: 1.5rem; color: #a0aec0; font-size: .8rem; }
   </style>
   {% block head %}{% endblock %}
@@ -73,8 +77,18 @@
   <a href="/admin" {% if request.path == '/admin' %}class="active"{% endif %}>Admin</a>
   <a href="/dashboard/config" {% if '/config' in request.path %}class="active"{% endif %}>Configuration</a>
   <span class="spacer"></span>
+
+  {% if session_authenticated %}
+    <span class="auth-chip ok">🟢 {{ session_username or 'authenticated' }}</span>
+    <a class="btn-nav" href="/auth/logout">Logout</a>
+  {% else %}
+    <span class="auth-chip no">🔒 Not logged in</span>
+    <a class="btn-nav" href="/auth/login">Login</a>
+  {% endif %}
+
   <span class="refresh-info">{% block refresh_text %}{% endblock %}</span>
 </nav>
+
 <main>
   {% block content %}{% endblock %}
 </main>

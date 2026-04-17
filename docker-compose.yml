@@ -79,9 +79,11 @@ services:
     image: openpolicyagent/opa:0.68.0
     container_name: ztf-opa
     restart: unless-stopped
-    command: run --server
+    command: run --server --log-level=debug /policies
     ports:
       - "8181:8181"
+    volumes:
+      - ./policies:/policies:ro
     networks: [ztf-net]
 
   ztf-api:
@@ -98,10 +100,15 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
       MINIO_BUCKET: ${MINIO_BUCKET:-forensics-evidence}
 
-      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://ztf-keycloak:8080}
+      # API talks to Keycloak internally via Docker network
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL_INTERNAL:-http://ztf-keycloak:8080}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-forensics}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api-gateway}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-CHANGE_ME_CLIENT_SECRET}
+
+      # local-dev compatibility (browser uses localhost issuer, API uses internal host)
+      KEYCLOAK_VERIFY_AUD: ${KEYCLOAK_VERIFY_AUD:-false}
+      KEYCLOAK_VERIFY_ISS: ${KEYCLOAK_VERIFY_ISS:-false}
 
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
       DEBUG: ${DEBUG:-False}
@@ -113,6 +120,14 @@ services:
         condition: service_healthy
       ztf-keycloak:
         condition: service_started
+      ztf-opa:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     networks: [ztf-net]
 
   ztf-dashboard:
@@ -124,11 +139,17 @@ services:
     environment:
       API_BASE_URL: ${API_BASE_URL:-http://ztf-api:8000}
       API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8000}
+
       KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://localhost:8080}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-http://ztf-keycloak:8080}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-forensics}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api-gateway}
-      KEYCLOAK_LOGIN_URL: ${KEYCLOAK_LOGIN_URL:-http://localhost:8080/realms/forensics/protocol/openid-connect/auth}
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+
+      KEYCLOAK_DASHBOARD_CLIENT_ID: ${KEYCLOAK_DASHBOARD_CLIENT_ID:-ztf-dashboard}
+      KEYCLOAK_DASHBOARD_CLIENT_SECRET: ${KEYCLOAK_DASHBOARD_CLIENT_SECRET}
+
+      DASHBOARD_BASE_URL: ${DASHBOARD_BASE_URL:-http://localhost:5000}
+      DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:-change-this-in-production}
+
       DEBUG: ${DEBUG:-False}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
@@ -136,6 +157,12 @@ services:
     depends_on:
       ztf-api:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/session/token/status', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     networks: [ztf-net]
 
 volumes:

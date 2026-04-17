@@ -6,22 +6,21 @@
 
 <div class="card">
   <h2>Authorization</h2>
-  <p style="font-size:.9rem;color:#4a5568;margin-bottom:.6rem;">
-    Enter a valid admin Bearer token (from Keycloak). This token is used for all admin API calls.
-  </p>
-  <input id="tokenInput" type="text" placeholder="Paste Bearer token (without 'Bearer ' prefix)"
-         value="{{ access_token }}"
-         style="width:100%;padding:.55rem;border:1px solid #cbd5e0;border-radius:6px;" />
-  <div style="margin-top:.6rem;">
-    <button onclick="saveToken()" style="padding:.45rem .8rem;">Save Token</button>
-    <button onclick="clearToken()" style="padding:.45rem .8rem;margin-left:.4rem;">Clear</button>
-  </div>
+  {% if session_authenticated %}
+    <p style="color:#276749;">
+      Logged in as <strong>{{ session_username }}</strong>.
+      {% if session_is_admin %}Admin role detected.{% else %}No admin role detected.{% endif %}
+    </p>
+  {% else %}
+    <p style="color:#c53030;">Login required for admin operations.</p>
+    <a href="/auth/login" style="display:inline-block;background:#1a3a5c;color:#fff;padding:.55rem 1rem;border-radius:6px;">Login</a>
+  {% endif %}
 </div>
 
 <div class="card mt">
   <h2>Backend Status</h2>
   {% if admin_status.get('auth_required') %}
-    <p style="color:#c53030;">Auth required. Please provide a valid admin token.</p>
+    <p style="color:#c53030;">Auth required or insufficient role. Login with admin account.</p>
   {% elif admin_status.get('ok') is sameas false and admin_status.get('error') %}
     <p style="color:#c53030;">Error: {{ admin_status.get('error') }}</p>
   {% else %}
@@ -31,6 +30,7 @@
         <tr><td><strong>Policies</strong></td><td>{{ admin_status.get('policies_count', 0) }}</td></tr>
         <tr><td><strong>Whitelist Locations</strong></td><td>{{ admin_status.get('whitelist_locations_count', 0) }}</td></tr>
         <tr><td><strong>Whitelist Devices</strong></td><td>{{ admin_status.get('whitelist_devices_count', 0) }}</td></tr>
+        <tr><td><strong>Audit Events</strong></td><td>{{ admin_status.get('audit_events_count', 0) }}</td></tr>
       </tbody>
     </table>
   {% endif %}
@@ -74,73 +74,132 @@
 </div>
 
 <div class="card mt">
+  <h2>⏳ Temporary Whitelist (Expiry)</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+    <div>
+      <label>Kind</label>
+      <select id="tmpKind" style="width:100%;margin:.3rem 0;padding:.45rem;">
+        <option value="location">location</option>
+        <option value="device">device</option>
+      </select>
+      <input id="tmpName" placeholder="name" style="width:100%;margin:.3rem 0;padding:.45rem;">
+      <input id="tmpDays" type="number" min="1" max="30" value="7" placeholder="expires in days" style="width:100%;margin:.3rem 0;padding:.45rem;">
+    </div>
+    <div>
+      <input id="tmpIpRange" placeholder="location only: ip range" style="width:100%;margin:.3rem 0;padding:.45rem;">
+      <input id="tmpLocation" placeholder="location only: location text" style="width:100%;margin:.3rem 0;padding:.45rem;">
+      <input id="tmpUserId" placeholder="device only: user_id" style="width:100%;margin:.3rem 0;padding:.45rem;">
+      <input id="tmpDeviceName" placeholder="device only: device name" style="width:100%;margin:.3rem 0;padding:.45rem;">
+      <button onclick="createTemporaryWhitelist()" style="padding:.45rem .8rem;">Create Temporary Whitelist</button>
+    </div>
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>📚 Data Loaders</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;">
+    <button onclick="loadUsers()">Load Users</button>
+    <button onclick="loadPolicies()">Load Policies</button>
+    <button onclick="loadLocations()">Load Locations</button>
+    <button onclick="loadDevices()">Load Devices</button>
+    <button onclick="loadAlerts()">Load Security Alerts</button>
+    <button onclick="loadAudit()">Load Admin Audit</button>
+  </div>
+</div>
+
+<div class="card mt">
   <h2>Result</h2>
-  <pre id="resultBox" style="white-space:pre-wrap;background:#f7fafc;border:1px solid #e2e8f0;padding:1rem;border-radius:6px;">Ready.</pre>
+  <pre id="resultBox" style="white-space:pre-wrap;background:#f7fafc;border:1px solid #e2e8f0;padding:1rem;border-radius:6px;max-height:420px;overflow:auto;">Ready.</pre>
 </div>
 
 <script>
-function getToken() {
-  return localStorage.getItem('ztf_admin_token') || document.getElementById('tokenInput').value.trim();
+async function callPost(path, payload) {
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    showResult({ method: 'POST', path, status: res.status, ok: res.ok, data });
+  } catch (e) {
+    showResult({ ok:false, error:e.message });
+  }
 }
-function saveToken() {
-  const token = document.getElementById('tokenInput').value.trim();
-  localStorage.setItem('ztf_admin_token', token);
-  alert('Token saved in browser localStorage.');
+
+async function callGet(path) {
+  try {
+    const res = await fetch(path, { method: 'GET' });
+    const data = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    showResult({ method: 'GET', path, status: res.status, ok: res.ok, data });
+  } catch (e) {
+    showResult({ ok:false, error:e.message });
+  }
 }
-function clearToken() {
-  localStorage.removeItem('ztf_admin_token');
-  document.getElementById('tokenInput').value = '';
-  alert('Token cleared.');
+
+function showResult(obj) {
+  if (obj?.data?.reauth) {
+    window.location.href = "/auth/login";
+    return;
+  }
+  document.getElementById('resultBox').textContent = JSON.stringify(obj, null, 2);
 }
-async function callApi(path, payload) {
-  const token = getToken();
-  const res = await fetch(`{{ api_public_url }}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
-  document.getElementById('resultBox').textContent = JSON.stringify({
-    status: res.status,
-    ok: res.ok,
-    data
-  }, null, 2);
-}
+
 function createUser() {
-  callApi('/admin/users', {
+  callPost('/dashboard/admin/users', {
     username: document.getElementById('username').value.trim(),
     email: document.getElementById('email').value.trim(),
     role: document.getElementById('role').value.trim()
   });
 }
+
 function createPolicy() {
-  callApi('/admin/policies', {
+  callPost('/dashboard/admin/policies', {
     name: document.getElementById('policyName').value.trim(),
     risk_threshold: parseInt(document.getElementById('policyThreshold').value || '0', 10),
     action: document.getElementById('policyAction').value.trim()
   });
 }
+
 function createLocation() {
-  callApi('/admin/whitelist/location', {
+  callPost('/dashboard/admin/whitelist/location', {
     name: document.getElementById('locName').value.trim(),
     ip_range: document.getElementById('locIpRange').value.trim(),
     location: document.getElementById('locValue').value.trim()
   });
 }
+
 function createDevice() {
-  callApi('/admin/whitelist/device', {
+  callPost('/dashboard/admin/whitelist/device', {
     user_id: document.getElementById('devUserId').value.trim(),
     device_name: document.getElementById('devName').value.trim()
   });
 }
-document.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('ztf_admin_token');
-  if (saved && !document.getElementById('tokenInput').value) {
-    document.getElementById('tokenInput').value = saved;
+
+function createTemporaryWhitelist() {
+  const kind = document.getElementById('tmpKind').value;
+  const payload = {
+    kind,
+    name: document.getElementById('tmpName').value.trim(),
+    expires_in_days: parseInt(document.getElementById('tmpDays').value || '7', 10)
+  };
+
+  if (kind === 'location') {
+    payload.ip_range = document.getElementById('tmpIpRange').value.trim();
+    payload.location = document.getElementById('tmpLocation').value.trim();
+  } else {
+    payload.user_id = document.getElementById('tmpUserId').value.trim();
+    payload.device_name = document.getElementById('tmpDeviceName').value.trim();
   }
-});
+
+  callPost('/dashboard/admin/whitelist/temporary', payload);
+}
+
+function loadUsers() { callGet('/dashboard/admin/users'); }
+function loadPolicies() { callGet('/dashboard/admin/policies'); }
+function loadLocations() { callGet('/dashboard/admin/whitelist/locations'); }
+function loadDevices() { callGet('/dashboard/admin/whitelist/devices'); }
+function loadAlerts() { callGet('/dashboard/admin/security/alerts?limit=100'); }
+function loadAudit() { callGet('/dashboard/admin/audit?limit=100'); }
 </script>
 {% endblock %}

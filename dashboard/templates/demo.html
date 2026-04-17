@@ -1,324 +1,356 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZTForensics - Live Demo</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+{% extends "base.html" %}
+{% block title %}ZTForensics — Live Demo{% endblock %}
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
+{% block content %}
+<style>
+  * { box-sizing: border-box; }
+  .demo-wrap { max-width: 1200px; margin: 0 auto; }
+  .hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; padding: 28px; border-radius: 12px; margin-bottom: 20px;
+  }
+  .panel {
+    background: #fff; padding: 24px; border-radius: 12px; margin-bottom: 16px;
+    box-shadow: 0 3px 8px rgba(0,0,0,.08);
+  }
+  .demo-box {
+    padding: 16px; border-radius: 8px; margin-bottom: 12px; border-left: 5px solid #ddd;
+  }
+  .demo-box.normal { background: #e8f5e9; border-left-color: #4CAF50; }
+  .demo-box.hacked { background: #ffebee; border-left-color: #f44336; }
+  .demo-box.medium { background: #fff8e1; border-left-color: #ff9800; }
+  .demo-box h3 { margin-bottom: 8px; }
+  .demo-box p { margin: 4px 0; color: #444; font-size: 14px; }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+  button {
+    padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer;
+    font-weight: 600; background: #1a3a5c; color: #fff; margin-top: 8px;
+  }
+  button:hover { opacity: .92; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
-        header {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            text-align: center;
-        }
+  .result-box { background: #f8fafc; padding: 16px; border-radius: 8px; margin-top: 12px; }
+  .result-allowed { border: 2px solid #4CAF50; color: #1b5e20; background: #e8f5e9; }
+  .result-denied { border: 2px solid #f44336; color: #b71c1c; background: #ffebee; }
+  .result-challenge { border: 2px solid #ff9800; color: #8a5a00; background: #fff8e1; }
 
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-        }
+  .risk-bar {
+    width: 100%; height: 26px; background: #ddd; border-radius: 6px; overflow: hidden; margin: 10px 0;
+  }
+  .risk-fill {
+    height: 100%; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 12px;
+  }
 
-        .demo-box {
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 5px solid #ddd;
-        }
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;
+  }
+  .stat-box {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; padding: 14px; border-radius: 8px; text-align: center;
+  }
+  .stat-number { font-size: 22px; font-weight: 800; }
 
-        .demo-box.normal {
-            background: #e8f5e9;
-            border-left-color: #4CAF50;
-        }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  th { background: #f3f4f6; }
 
-        .demo-box.hacked {
-            background: #ffebee;
-            border-left-color: #f44336;
-        }
+  .muted { color: #6b7280; font-size: 13px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
 
-        .demo-box h3 {
-            margin-bottom: 10px;
-        }
+<div class="demo-wrap">
+  <div class="hero">
+    <h1>🔒 ZTForensics Live Demo</h1>
+    <p>Zero Trust Access Decisions + Forensic Evidence + Admin Visibility</p>
+    <p class="muted" style="color:#e5e7eb;">This page supports visual simulation + real API flow.</p>
+  </div>
 
-        .demo-box p {
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
+  <div class="panel">
+    <h2>📋 Demo Scenarios</h2>
 
-        button {
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-top: 10px;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .result-box {
-            background: #f5f5f5;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-
-        .result-allowed {
-            background: #e8f5e9;
-            border: 2px solid #4CAF50;
-            color: #2e7d32;
-        }
-
-        .result-denied {
-            background: #ffebee;
-            border: 2px solid #f44336;
-            color: #c62828;
-        }
-
-        .result-title {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-
-        .risk-bar {
-            width: 100%;
-            height: 30px;
-            background: #ddd;
-            border-radius: 5px;
-            overflow: hidden;
-            margin: 10px 0;
-        }
-
-        .risk-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #4CAF50 0%, #FFC107 50%, #f44336 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-            font-size: 12px;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .stat-box {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 24px;
-            font-weight: 700;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-
-        th {
-            background: #f5f5f5;
-            font-weight: 600;
-        }
-
-        tr:hover {
-            background: #f9f9f9;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>🔒 ZTForensics Live Demo</h1>
-            <p>Demonstration of Zero Trust Access Control in Action</p>
-        </header>
-
-        <div style="background: white; padding: 30px; border-radius: 10px; margin-bottom: 20px;">
-            <h2>📋 Demo Scenarios</h2>
-            
-            <div class="demo-box normal">
-                <h3>✅ Normal Employee Access</h3>
-                <p><strong>User:</strong> Raj (Employee) | <strong>Time:</strong> 10:30 AM</p>
-                <p><strong>Location:</strong> Mumbai Office | <strong>Device:</strong> Company Laptop</p>
-                <p><strong>Action:</strong> View Customer Records</p>
-                <button onclick="simulateNormalAccess()">▶️ Simulate Access</button>
-            </div>
-
-            <div class="demo-box hacked">
-                <h3>❌ Hacked Account (Attacker)</h3>
-                <p><strong>Attacker:</strong> Using Stolen Credentials | <strong>Time:</strong> 3:00 AM</p>
-                <p><strong>Location:</strong> Russia | <strong>Device:</strong> Unknown</p>
-                <p><strong>Action:</strong> Transfer $1 Million</p>
-                <button onclick="simulateHackedAccess()">▶️ Simulate Attack</button>
-            </div>
-
-            <div class="demo-box normal">
-                <h3>🟡 Emergency Access (Different Location)</h3>
-                <p><strong>User:</strong> Raj (Emergency) | <strong>Time:</strong> 11:00 PM</p>
-                <p><strong>Location:</strong> Home | <strong>Device:</strong> Personal Laptop</p>
-                <p><strong>Action:</strong> Access Urgent Client Data</p>
-                <button onclick="simulateEmergencyAccess()">▶️ Simulate Access</button>
-            </div>
-
-            <div id="result-area"></div>
-        </div>
-
-        <div style="background: white; padding: 30px; border-radius: 10px; margin-bottom: 20px;">
-            <h2>📊 Real-Time Dashboard</h2>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="stat-number">1,247</div>
-                    <div>Total Accesses</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" style="color: #2ed573;">1,198</div>
-                    <div>Allowed ✅</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" style="color: #ff4757;">35</div>
-                    <div>Denied ❌</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" style="color: #ffa502;">14</div>
-                    <div>Alerts ⚠️</div>
-                </div>
-            </div>
-        </div>
-
-        <div style="background: white; padding: 30px; border-radius: 10px;">
-            <h2>📋 Evidence Timeline</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>User</th>
-                        <th>Action</th>
-                        <th>Risk Score</th>
-                        <th>Decision</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>10:30 AM</td>
-                        <td>raj@company.com</td>
-                        <td>VIEW_RECORDS</td>
-                        <td style="color: #2ed573;"><strong>15/100</strong></td>
-                        <td>✅ ALLOWED</td>
-                    </tr>
-                    <tr>
-                        <td>03:00 AM</td>
-                        <td>raj@company.com</td>
-                        <td>TRANSFER_MONEY</td>
-                        <td style="color: #ff4757;"><strong>92/100</strong></td>
-                        <td>❌ DENIED</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+    <div class="demo-box normal">
+      <h3>✅ Normal Employee Access</h3>
+      <p><strong>User:</strong> Raj (Employee) | <strong>Time:</strong> 10:30 AM</p>
+      <p><strong>Location:</strong> Mumbai Office | <strong>Device:</strong> Company Laptop</p>
+      <p><strong>Action:</strong> View Customer Records</p>
+      <div class="btn-row">
+        <button onclick="simulateNormalAccess()">Visual Simulate</button>
+        <button onclick="runApiScenario('normal')">Run Real API</button>
+      </div>
     </div>
 
-    <script>
-        function simulateNormalAccess() {
-            const result = `
-                <div class="result-box result-allowed">
-                    <div class="result-title">✅ ACCESS ALLOWED</div>
-                    <p><strong>Risk Factors:</strong></p>
-                    <ul style="margin-left: 20px;">
-                        <li>✅ Known location (Office): 0 points</li>
-                        <li>✅ Business hours: 0 points</li>
-                        <li>✅ Company device: 0 points</li>
-                        <li>✅ No failed logins: 0 points</li>
-                    </ul>
-                    <div class="risk-bar">
-                        <div class="risk-fill" style="width: 15%; background: linear-gradient(90deg, #4CAF50, #4CAF50);">15/100</div>
-                    </div>
-                    <p><strong>Decision:</strong> ALLOW (Low Risk) ✅</p>
-                </div>
-            `;
-            document.getElementById('result-area').innerHTML = result;
-        }
+    <div class="demo-box hacked">
+      <h3>❌ Hacked Account (Attacker)</h3>
+      <p><strong>Attacker:</strong> Using Stolen Credentials | <strong>Time:</strong> 3:00 AM</p>
+      <p><strong>Location:</strong> Russia | <strong>Device:</strong> Unknown</p>
+      <p><strong>Action:</strong> Transfer $1 Million</p>
+      <div class="btn-row">
+        <button onclick="simulateHackedAccess()">Visual Simulate</button>
+        <button onclick="runApiScenario('hacked')">Run Real API</button>
+      </div>
+    </div>
 
-        function simulateHackedAccess() {
-            const result = `
-                <div class="result-box result-denied">
-                    <div class="result-title">❌ ACCESS DENIED - FRAUD DETECTED</div>
-                    <p><strong>Risk Factors:</strong></p>
-                    <ul style="margin-left: 20px;">
-                        <li>🔴 Foreign IP (Russia): +30 points</li>
-                        <li>🔴 Unusual time (3 AM): +25 points</li>
-                        <li>🔴 New device: +10 points</li>
-                        <li>🔴 Large transfer: +20 points</li>
-                    </ul>
-                    <div class="risk-bar">
-                        <div class="risk-fill" style="width: 92%; background: linear-gradient(90deg, #f44336, #f44336);">92/100</div>
-                    </div>
-                    <p><strong>Decision:</strong> DENY (Critical Risk) ❌</p>
-                    <p style="margin-top: 10px; color: #c62828;">🚨 Alert: Failed login attempt from Russia IP</p>
-                </div>
-            `;
-            document.getElementById('result-area').innerHTML = result;
-        }
+    <div class="demo-box medium">
+      <h3>🟡 Emergency Access (Different Location)</h3>
+      <p><strong>User:</strong> Raj (Emergency) | <strong>Time:</strong> 11:00 PM</p>
+      <p><strong>Location:</strong> Home | <strong>Device:</strong> Personal Laptop</p>
+      <p><strong>Action:</strong> Access Urgent Client Data</p>
+      <div class="btn-row">
+        <button onclick="simulateEmergencyAccess()">Visual Simulate</button>
+        <button onclick="runApiScenario('emergency')">Run Real API</button>
+      </div>
+    </div>
 
-        function simulateEmergencyAccess() {
-            const result = `
-                <div class="result-box" style="background: #fff3cd; border: 2px solid #ffa502; color: #856404;">
-                    <div class="result-title">⚠️ MEDIUM RISK - MFA REQUIRED</div>
-                    <p><strong>Risk Factors:</strong></p>
-                    <ul style="margin-left: 20px;">
-                        <li>🟡 Unusual location (Home): +15 points</li>
-                        <li>🟡 After hours (11 PM): +20 points</li>
-                        <li>🟡 New device: +10 points</li>
-                    </ul>
-                    <div class="risk-bar">
-                        <div class="risk-fill" style="width: 58%; background: linear-gradient(90deg, #ffa502, #ffa502);">58/100</div>
-                    </div>
-                    <p><strong>Decision:</strong> ALERT + OTP REQUIRED ⚠️</p>
-                    <p style="margin-top: 10px;">✅ After OTP verification: Access ALLOWED</p>
-                </div>
-            `;
-            document.getElementById('result-area').innerHTML = result;
-        }
-    </script>
-</body>
-</html>
+    <div id="result-area"></div>
+  </div>
+
+  <div class="panel">
+    <h2>📊 Real-Time Dashboard</h2>
+    <div class="btn-row">
+      <button onclick="refreshSummary()">Refresh Summary</button>
+    </div>
+    <div class="stats-grid" id="statsGrid" style="margin-top:12px;">
+      <div class="stat-box"><div class="stat-number" id="s_total">-</div><div>Total Accesses</div></div>
+      <div class="stat-box"><div class="stat-number" id="s_allowed">-</div><div>Allowed ✅</div></div>
+      <div class="stat-box"><div class="stat-number" id="s_challenge">-</div><div>OTP Challenge 🟡</div></div>
+      <div class="stat-box"><div class="stat-number" id="s_denied">-</div><div>Denied ❌</div></div>
+      <div class="stat-box"><div class="stat-number" id="s_alerts">-</div><div>Open Alerts 🚨</div></div>
+    </div>
+    <p class="muted" id="summaryMeta" style="margin-top:10px;">Loading...</p>
+  </div>
+
+  <div class="panel">
+    <h2>📋 Recent Evidence Timeline (live)</h2>
+    <div class="btn-row">
+      <button onclick="refreshTimeline()">Refresh Timeline</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>User</th>
+          <th>Resource</th>
+          <th>Action</th>
+          <th>Decision</th>
+          <th>Risk</th>
+        </tr>
+      </thead>
+      <tbody id="timelineBody">
+        <tr><td colspan="6" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API_BASE = "{{ api_public_url }}".trim() || `${window.location.protocol}//${window.location.hostname}:8000`;
+
+async function parseJsonSafe(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Non-JSON response (status ${res.status}): ${text.slice(0, 180)}`);
+  }
+}
+
+function riskVisual(score) {
+  const s = Number(score || 0);
+  const pct = Math.max(0, Math.min(100, s <= 1 ? s * 100 : s));
+  if (pct >= 80) return { cls: "result-denied", color: "#f44336" };
+  if (pct >= 50) return { cls: "result-challenge", color: "#ff9800" };
+  return { cls: "result-allowed", color: "#4CAF50" };
+}
+
+function formatDecision(decision) {
+  const d = (decision || "").toLowerCase();
+  if (d === "allow") return "✅ ALLOW";
+  if (d === "deny") return "❌ DENY";
+  if (d === "challenge_otp") return "🟡 CHALLENGE_OTP";
+  return decision || "UNKNOWN";
+}
+
+function renderResultBox(title, bulletHtml, score, decision, reason, extra = "") {
+  const vis = riskVisual(score);
+  const pct = Math.max(0, Math.min(100, Number(score || 0) <= 1 ? Number(score) * 100 : Number(score)));
+  const shownScore = Number(score || 0) <= 1 ? (Number(score) * 100).toFixed(1) : Number(score).toFixed(1);
+
+  document.getElementById("result-area").innerHTML = `
+    <div class="result-box ${vis.cls}">
+      <div style="font-size:18px;font-weight:800;margin-bottom:8px;">${title}</div>
+      ${bulletHtml}
+      <div class="risk-bar">
+        <div class="risk-fill" style="width:${pct}%; background:${vis.color};">${shownScore}/100</div>
+      </div>
+      <p><strong>Decision:</strong> ${formatDecision(decision)}</p>
+      <p><strong>Reason:</strong> ${reason || "N/A"}</p>
+      ${extra}
+    </div>
+  `;
+}
+
+function simulateNormalAccess() {
+  renderResultBox(
+    "✅ ACCESS ALLOWED",
+    `<ul style="margin-left:20px;">
+      <li>✅ Known location (Office)</li>
+      <li>✅ Business hours</li>
+      <li>✅ Known device</li>
+      <li>✅ No anomaly burst</li>
+    </ul>`,
+    15, "allow", "LOW_RISK_NORMAL_BEHAVIOR"
+  );
+}
+
+function simulateHackedAccess() {
+  renderResultBox(
+    "❌ ACCESS DENIED - FRAUD DETECTED",
+    `<ul style="margin-left:20px;">
+      <li>🔴 Foreign/unknown IP</li>
+      <li>🔴 Unusual time</li>
+      <li>🔴 Unknown device fingerprint</li>
+      <li>🔴 High-risk action pattern</li>
+    </ul>`,
+    92, "deny", "VERY_SUSPICIOUS_PATTERN",
+    `<p style="margin-top:8px;">🚨 Alert generated and evidence chain updated.</p>`
+  );
+}
+
+function simulateEmergencyAccess() {
+  renderResultBox(
+    "🟡 MEDIUM RISK - OTP STEP-UP REQUIRED",
+    `<ul style="margin-left:20px;">
+      <li>🟡 Off-hours access</li>
+      <li>🟡 New location</li>
+      <li>🟡 Personal device</li>
+    </ul>`,
+    58, "challenge_otp", "STEP_UP_REQUIRED",
+    `<p style="margin-top:8px;">If OTP verifies, access can be allowed.</p>`
+  );
+}
+
+function scenarioPayload(type) {
+  if (type === "normal") {
+    return {
+      user_id: "raj.employee",
+      resource: "customer_records",
+      action: "view",
+      ip_address: "1.2.3.4",
+      user_agent: "CompanyLaptop/Chrome",
+      metadata: { risk_score: 15 }
+    };
+  }
+  if (type === "hacked") {
+    return {
+      user_id: "ceo.sharma",
+      resource: "board_finance",
+      action: "transfer",
+      ip_address: "185.220.101.10",
+      user_agent: "UnknownDevice/Tor",
+      metadata: { risk_score: 92 }
+    };
+  }
+  return {
+    user_id: "raj.employee",
+    resource: "urgent_client_data",
+    action: "access",
+    ip_address: "5.6.7.8",
+    user_agent: "PersonalLaptop/Chrome",
+    metadata: { risk_score: 58 }
+  };
+}
+
+async function runApiScenario(type) {
+  const payload = scenarioPayload(type);
+  try {
+    const res = await fetch(`${API_BASE}/access`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await parseJsonSafe(res);
+
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+    }
+
+    const score = data.risk_score ?? payload.metadata.risk_score ?? 0;
+    const decision = data.decision || "unknown";
+    const reason = data.reason || "N/A";
+    const chain = data.chain_hash ? `<p class="mono"><strong>Chain Hash:</strong> ${data.chain_hash}</p>` : "";
+    const otp = data.otp_challenge_id ? `<p><strong>OTP Challenge ID:</strong> ${data.otp_challenge_id}</p>` : "";
+
+    renderResultBox(
+      "📡 Real API Decision",
+      `<p><strong>User:</strong> ${payload.user_id}</p>
+       <p><strong>Resource:</strong> ${payload.resource}</p>
+       <p><strong>Action:</strong> ${payload.action}</p>`,
+      score, decision, reason, chain + otp
+    );
+
+    refreshSummary();
+    refreshTimeline();
+  } catch (e) {
+    document.getElementById("result-area").innerHTML =
+      `<div class="result-box result-denied"><strong>Error:</strong> ${e.message}</div>`;
+  }
+}
+
+async function refreshSummary() {
+  try {
+    const res = await fetch(`${API_BASE}/forensics/summary-public`);
+    const s = await parseJsonSafe(res);
+
+    if (!res.ok) throw new Error(s.detail || s.error || `HTTP ${res.status}`);
+
+    document.getElementById("s_total").textContent = s.total_requests ?? 0;
+    document.getElementById("s_allowed").textContent = s.allowed ?? 0;
+    document.getElementById("s_challenge").textContent = s.challenge_otp ?? 0;
+    document.getElementById("s_denied").textContent = s.denied ?? 0;
+    document.getElementById("s_alerts").textContent = s.open_security_alerts ?? 0;
+    document.getElementById("summaryMeta").textContent = `Last updated: ${new Date().toLocaleString()}`;
+  } catch (e) {
+    document.getElementById("summaryMeta").textContent = `Failed to load summary: ${e.message}`;
+  }
+}
+
+async function refreshTimeline() {
+  try {
+    const res = await fetch(`${API_BASE}/forensics/summary-public`);
+    const s = await parseJsonSafe(res);
+    if (!res.ok) throw new Error(s.detail || s.error || `HTTP ${res.status}`);
+
+    const rows = s.recent_logs || [];
+    const body = document.getElementById("timelineBody");
+
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="6" class="muted">No logs yet.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(r => {
+      const decision = formatDecision(r.decision);
+      const risk = Number(r.risk_score ?? 0);
+      const riskText = risk <= 1 ? (risk * 100).toFixed(1) : risk.toFixed(1);
+      return `
+        <tr>
+          <td>${r.timestamp || "-"}</td>
+          <td>${r.user_id || "-"}</td>
+          <td>${r.resource || "-"}</td>
+          <td>${r.action || "-"}</td>
+          <td>${decision}</td>
+          <td>${riskText}/100</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (e) {
+    document.getElementById("timelineBody").innerHTML =
+      `<tr><td colspan="6" class="muted">Failed to load timeline: ${e.message}</td></tr>`;
+  }
+}
+
+refreshSummary();
+refreshTimeline();
+</script>
+{% endblock %}

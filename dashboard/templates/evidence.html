@@ -5,16 +5,13 @@
 <h1>📦 Evidence Export</h1>
 
 <div class="card">
-  <h2>Access Token (for protected downloads)</h2>
-  <p style="font-size:.9rem;color:#4a5568;margin-bottom:.6rem;">
-    Export endpoints are auth-protected. Provide Bearer token once here.
-  </p>
-  <input id="evTokenInput" type="text" placeholder="Paste Bearer token"
-         value="{{ access_token }}"
-         style="width:100%;padding:.55rem;border:1px solid #cbd5e0;border-radius:6px;" />
-  <div style="margin-top:.6rem;">
-    <button onclick="saveEvidenceToken()" style="padding:.45rem .8rem;">Save Token</button>
-  </div>
+  <h2>Authorization</h2>
+  {% if session_authenticated %}
+    <p style="color:#276749;">You are logged in as <strong>{{ session_username }}</strong>. Downloads are one-click.</p>
+  {% else %}
+    <p style="color:#c53030;">Please login first to download protected evidence files.</p>
+    <a href="/auth/login" style="display:inline-block;background:#1a3a5c;color:#fff;padding:.55rem 1rem;border-radius:6px;">Login</a>
+  {% endif %}
 </div>
 
 <div class="card mt">
@@ -29,10 +26,10 @@
       <p style="font-size:.88rem;margin:.5rem 0 1rem;color:#4a5568">
         Includes forensic records and chain stats.
       </p>
-      <button onclick="openProtected('/forensics/export')"
+      <a href="/dashboard/evidence/download?kind=json"
          style="display:inline-block;background:#2a69ac;color:#fff;padding:.55rem 1.2rem;border:none;border-radius:6px;font-weight:600;font-size:.9rem;cursor:pointer;">
         ⬇ Download JSON
-      </button>
+      </a>
     </div>
 
     <div class="card" style="border:1px solid #c6f6d5">
@@ -40,58 +37,11 @@
       <p style="font-size:.88rem;margin:.5rem 0 1rem;color:#4a5568">
         Executive summary + recent records.
       </p>
-      <button onclick="openProtected('/forensics/export-pdf')"
+      <a href="/dashboard/evidence/download?kind=pdf"
          style="display:inline-block;background:#276749;color:#fff;padding:.55rem 1.2rem;border:none;border-radius:6px;font-weight:600;font-size:.9rem;cursor:pointer;">
         ⬇ Download PDF Report
-      </button>
+      </a>
     </div>
   </div>
 </div>
-
-<script>
-function saveEvidenceToken() {
-  const token = document.getElementById('evTokenInput').value.trim();
-  localStorage.setItem('ztf_admin_token', token);
-  alert('Token saved.');
-}
-
-async function openProtected(path) {
-  const token = document.getElementById('evTokenInput').value.trim() || localStorage.getItem('ztf_admin_token') || '';
-  if (!token) {
-    alert('Please provide access token first.');
-    return;
-  }
-
-  const res = await fetch(`{{ api_public_url }}${path}`, {
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    alert(`Download failed (${res.status}): ${txt.substring(0, 200)}`);
-    return;
-  }
-
-  const blob = await res.blob();
-  const contentType = res.headers.get('content-type') || '';
-  const isPdf = contentType.includes('pdf');
-  const filename = isPdf ? 'ztforensics-report.pdf' : 'ztforensics-export.json';
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('ztf_admin_token');
-  const el = document.getElementById('evTokenInput');
-  if (saved && !el.value) el.value = saved;
-});
-</script>
 {% endblock %}

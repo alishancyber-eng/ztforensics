@@ -5,34 +5,46 @@
 <h1>🔗 Hash Chain Verification</h1>
 
 <div class="card">
-  {% if chain.get('ok') %}
-  <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
-    <span style="font-size:2rem">✅</span>
-    <div>
-      <strong style="font-size:1.1rem;color:#276749">Chain Verified — No Tampering Detected</strong><br>
-      <span style="color:#718096">{{ chain.get('checked', 0) }} records checked out of {{ chain.get('total_records', 0) }} total.</span>
+  {% if chain.get('auth_required') %}
+    <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
+      <span style="font-size:2rem">🔐</span>
+      <div>
+        <strong style="font-size:1.1rem;color:#c05621">Authentication Required</strong><br>
+        <span style="color:#718096">{{ chain.get('error', 'Please authenticate to verify chain.') }}</span>
+      </div>
     </div>
-  </div>
+  {% elif chain.get('ok') %}
+    <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
+      <span style="font-size:2rem">✅</span>
+      <div>
+        <strong style="font-size:1.1rem;color:#276749">Chain Verified — No Tampering Detected</strong><br>
+        <span style="color:#718096">{{ chain.get('checked', 0) }} records checked out of {{ chain.get('total_records', 0) }} total.</span>
+      </div>
+    </div>
   {% else %}
-  <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
-    <span style="font-size:2rem">🚨</span>
-    <div>
-      <strong style="font-size:1.1rem;color:#c53030">CHAIN BROKEN — Tampering Detected!</strong><br>
-      {% if chain.get('broken_at_id') %}
-      <span style="color:#718096">Integrity failure at record ID {{ chain.broken_at_id }}: {{ chain.get('error', '') }}</span>
-      {% else %}
-      <span style="color:#718096">{{ chain.get('error', 'Unknown error') }}</span>
-      {% endif %}
+    <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
+      <span style="font-size:2rem">🚨</span>
+      <div>
+        <strong style="font-size:1.1rem;color:#c53030">CHAIN BROKEN — Tampering Detected!</strong><br>
+        {% if chain.get('broken_at_id') %}
+          <span style="color:#718096">Integrity failure at record ID {{ chain.broken_at_id }}: {{ chain.get('error', '') }}</span>
+        {% else %}
+          <span style="color:#718096">{{ chain.get('error', 'Unknown error') }}</span>
+        {% endif %}
+      </div>
     </div>
-  </div>
   {% endif %}
 
   <table style="margin-top:.5rem">
     <tbody>
       <tr><td><strong>Status</strong></td><td>
-        <span class="badge {% if chain.get('ok') %}badge-green{% else %}badge-red{% endif %}">
-          {{ 'VALID' if chain.get('ok') else 'BROKEN' }}
-        </span>
+        {% if chain.get('auth_required') %}
+          <span class="badge badge-orange">AUTH REQUIRED</span>
+        {% else %}
+          <span class="badge {% if chain.get('ok') %}badge-green{% else %}badge-red{% endif %}">
+            {{ 'VALID' if chain.get('ok') else 'BROKEN' }}
+          </span>
+        {% endif %}
       </td></tr>
       <tr><td><strong>Records Checked</strong></td><td>{{ chain.get('checked', 0) }}</td></tr>
       <tr><td><strong>Total Records</strong></td><td>{{ chain.get('total_records', 0) }}</td></tr>

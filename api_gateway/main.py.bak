@@ -460,11 +460,7 @@ async def list_security_alerts(
 
 
 @app.post("/access", response_model=AccessResponse)
-async def access(
-    request: AccessRequest,
-    db: Session = Depends(get_db),
-    _user: UserContext = Depends(get_current_user),
-) -> AccessResponse:
+async def access(request: AccessRequest, db: Session = Depends(get_db)) -> AccessResponse:
     computed_risk = risk_scorer.calculate_risk(
         {
             "ip_address": request.ip_address,
